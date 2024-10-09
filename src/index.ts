@@ -1,4 +1,5 @@
 import "./types/mysql";
+import "./types/firebase-auth";
 import Fastify from "fastify";
 import mysql from "@fastify/mysql";
 import dotenv from "dotenv";
@@ -21,7 +22,6 @@ fastify.get("/", function (req, reply) {
   reply.send("API server is running...");
 });
 
-// Register routes
 fastify.register(districtRoutes);
 fastify.register(citymunRoutes);
 fastify.register(barangayRoutes);
@@ -30,7 +30,10 @@ fastify.register(voterRoutes);
 // Start the server
 const start = async () => {
   try {
-    await fastify.listen({ port: 3000 });
+    await fastify.listen({
+      host: process.env.HOST as string | undefined,
+      port: (process.env.PORT as number | undefined) || 3000,
+    });
     console.log("Server is running on http://localhost:3000");
   } catch (err) {
     fastify.log.error(err);
