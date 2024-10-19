@@ -39,4 +39,17 @@ export type Voter = {
   is_deleted: boolean; // int(1), not nullable
   is_xls: boolean; // int(1), not nullable
   not_voter?: boolean | null; // tinyint(1), nullable
+  location?: {
+    coords: {
+      latitude: number;
+      longitude: number;
+      altitude: number | null;
+      accuracy: number | null;
+      altitudeAccuracy: number | null;
+      heading: number | null;
+      speed: number | null;
+    };
+    timestamp: number;
+    mocked?: boolean;
+  } | null;
 };

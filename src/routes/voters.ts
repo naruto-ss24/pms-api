@@ -49,8 +49,10 @@ export async function voterRoutes(fastify: FastifyInstance) {
   });
 
   // POST voters to update
-  fastify.post<{ Body: Voter[] }>("/voters/update", async (req, reply) => {
-    const voters = req.body;
+  fastify.post<{
+    Body: { voters: Voter[]; chunkIndex: number; totalChunks: number };
+  }>("/voters/upload-chunk", async (req, reply) => {
+    const { voters } = req.body; // Destructure voters from req.body
 
     if (voters.length > 100) {
       return reply
@@ -58,77 +60,36 @@ export async function voterRoutes(fastify: FastifyInstance) {
         .send({ error: "Cannot update more than 100 voters at a time." });
     }
 
+    let connection;
     try {
-      const connection = await fastify.mysql.getConnection();
+      connection = await fastify.mysql.getConnection();
       await connection.beginTransaction();
 
       for (const voter of voters) {
-        const {
-          id,
-          fullname,
-          address,
-          contactnumber,
-          sex,
-          bdate,
-          status,
-          is_houseleader,
-          is_grpleader,
-          is_clusterleader,
-          is_coordinator,
-          is_tagged,
-          is_enemy,
-          deceased,
-          group_id,
-          family_id,
-          img,
-          img_thumb,
-          is_deleted,
-          is_xls,
-          not_voter,
-        } = voter;
+        const { id, location } = voter;
 
-        await connection.query(
-          "UPDATE voters SET fullname = ?, address = ?, contactnumber = ?, sex = ?, bdate = ?, status = ?, is_houseleader = ?, is_grpleader = ?, is_clusterleader = ?, is_coordinator = ?, is_tagged = ?, is_enemy = ?, deceased = ?, group_id = ?, family_id = ?, img = ?, img_thumb = ?, is_deleted = ?, is_xls = ?, not_voter = ? WHERE id = ?",
-          [
-            fullname,
-            address,
-            contactnumber,
-            sex,
-            bdate,
-            status,
-            is_houseleader,
-            is_grpleader,
-            is_clusterleader,
-            is_coordinator,
-            is_tagged,
-            is_enemy,
-            deceased,
-            group_id,
-            family_id,
-            img,
-            img_thumb,
-            is_deleted,
-            is_xls,
-            not_voter,
-            id,
-          ]
-        );
+        await connection.query("UPDATE voters SET location = ? WHERE id = ?", [
+          location,
+          id,
+        ]);
       }
 
       await connection.commit();
-      connection.release();
 
       reply.send({
         success: true,
         message: `${voters.length} voters updated successfully.`,
       });
     } catch (err) {
-      const connection = await fastify.mysql.getConnection();
-      await connection.rollback();
-      connection.release();
-
+      if (connection) {
+        await connection.rollback();
+      }
       fastify.log.error(err);
       reply.status(500).send({ error: "Failed to update voters" });
+    } finally {
+      if (connection) {
+        connection.release();
+      }
     }
   });
 }
