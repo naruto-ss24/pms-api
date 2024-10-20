@@ -1,12 +1,12 @@
 import { FastifyInstance } from "fastify";
 import { Voter } from "../types/voter";
 import { RowDataPacket } from "@fastify/mysql";
+import { authenticateUser } from "../firebase-auth";
 
 export async function voterRoutes(fastify: FastifyInstance) {
-  // GET voters with pagination
   fastify.get<{
     Querystring: { brgy_code: string; page?: number; limit?: number };
-  }>("/voters", async (req, reply) => {
+  }>("/voters", { preHandler: authenticateUser }, async (req, reply) => {
     const { brgy_code, page = 1, limit = 100 } = req.query;
     const pageNumber = Number(page);
     const limitNumber = Number(limit);
@@ -48,48 +48,51 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST voters to update
   fastify.post<{
     Body: { voters: Voter[]; chunkIndex: number; totalChunks: number };
-  }>("/voters/upload-chunk", async (req, reply) => {
-    const { voters } = req.body; // Destructure voters from req.body
+  }>(
+    "/voters/upload-chunk",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { voters } = req.body; // Destructure voters from req.body
 
-    if (voters.length > 100) {
-      return reply
-        .status(400)
-        .send({ error: "Cannot update more than 100 voters at a time." });
+      if (voters.length > 100) {
+        return reply
+          .status(400)
+          .send({ error: "Cannot update more than 100 voters at a time." });
+      }
+
+      let connection;
+      try {
+        connection = await fastify.mysql.getConnection();
+        await connection.beginTransaction();
+
+        for (const voter of voters) {
+          const { id, location } = voter;
+
+          await connection.query(
+            "UPDATE voters SET location = ? WHERE id = ?",
+            [location, id]
+          );
+        }
+
+        await connection.commit();
+
+        reply.send({
+          success: true,
+          message: `${voters.length} voters updated successfully.`,
+        });
+      } catch (err) {
+        if (connection) {
+          await connection.rollback();
+        }
+        fastify.log.error(err);
+        reply.status(500).send({ error: "Failed to update voters" });
+      } finally {
+        if (connection) {
+          connection.release();
+        }
+      }
     }
-
-    let connection;
-    try {
-      connection = await fastify.mysql.getConnection();
-      await connection.beginTransaction();
-
-      for (const voter of voters) {
-        const { id, location } = voter;
-
-        await connection.query("UPDATE voters SET location = ? WHERE id = ?", [
-          location,
-          id,
-        ]);
-      }
-
-      await connection.commit();
-
-      reply.send({
-        success: true,
-        message: `${voters.length} voters updated successfully.`,
-      });
-    } catch (err) {
-      if (connection) {
-        await connection.rollback();
-      }
-      fastify.log.error(err);
-      reply.status(500).send({ error: "Failed to update voters" });
-    } finally {
-      if (connection) {
-        connection.release();
-      }
-    }
-  });
+  );
 }

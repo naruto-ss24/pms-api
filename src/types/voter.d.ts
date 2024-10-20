@@ -52,4 +52,6 @@ export type Voter = {
     timestamp: number;
     mocked?: boolean;
   } | null;
+  images?: string[] | null;
+  tags?: { tag: string; printedAt?: string | null }[] | null;
 };

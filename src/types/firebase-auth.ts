@@ -1,6 +1,3 @@
-// src/types/firebase-auth.d.ts
-
-import "fastify";
 import admin from "firebase-admin";
 
 declare module "fastify" {
