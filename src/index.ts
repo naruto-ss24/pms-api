@@ -43,7 +43,7 @@ fastify.get("/", function (req, reply) {
 
 fastify.post<{ Querystring: { folder: string } }>(
   "/upload-image",
-  // { preHandler: authenticateUser },
+  { preHandler: authenticateUser },
   async (req, reply) => {
     const folder = req.query.folder;
 
