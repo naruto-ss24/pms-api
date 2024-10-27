@@ -48,18 +48,16 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post<{
-    Body: { voters: Voter[]; chunkIndex: number; totalChunks: number };
-  }>(
+  fastify.post<{ Body: { voters: Partial<Voter>[] } }>(
     "/voters/upload-chunk",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { voters } = req.body; // Destructure voters from req.body
+      const { voters } = req.body;
 
-      if (voters.length > 100) {
+      if (voters.length > 50) {
         return reply
           .status(400)
-          .send({ error: "Cannot update more than 100 voters at a time." });
+          .send({ error: "Cannot update more than 50 voters at a time." });
       }
 
       let connection;
@@ -68,11 +66,20 @@ export async function voterRoutes(fastify: FastifyInstance) {
         await connection.beginTransaction();
 
         for (const voter of voters) {
-          const { id, location } = voter;
+          const { id, img, location, images } = voter;
+
+          if (!id) {
+            throw new Error(`Voter ID is missing for one of the voters.`);
+          }
 
           await connection.query(
-            "UPDATE voters SET location = ? WHERE id = ?",
-            [location, id]
+            "UPDATE voters SET img = ?, location = ?, images = ? WHERE id = ?",
+            [
+              img,
+              location ? JSON.stringify(location) : null, // Serialize location to JSON
+              images ? JSON.stringify(images) : null, // Serialize images to JSON
+              id,
+            ]
           );
         }
 
@@ -86,7 +93,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         if (connection) {
           await connection.rollback();
         }
-        fastify.log.error(err);
+        fastify.log.error("Error updating voters:", err);
         reply.status(500).send({ error: "Failed to update voters" });
       } finally {
         if (connection) {
