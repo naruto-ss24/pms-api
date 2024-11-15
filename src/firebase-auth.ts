@@ -1,10 +1,7 @@
-// src/firebase-auth.ts
-
 import admin from "firebase-admin";
 import { FastifyRequest, FastifyReply } from "fastify";
 import path from "path";
 
-// Load the service account key JSON file
 const serviceAccount = require(path.resolve(
   __dirname,
   "../firebase-admin.json"
@@ -34,6 +31,7 @@ export const authenticateUser = async (
     request.user = decodedToken;
     done();
   } catch (error) {
+    console.error("Authentication error:", error);
     return reply.status(401).send({ message: "Invalid token" });
   }
 };

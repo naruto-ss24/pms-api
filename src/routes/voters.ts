@@ -30,7 +30,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const nextPage = pageNumber < totalPages ? pageNumber + 1 : null;
       const prevPage = pageNumber > 1 ? pageNumber - 1 : null;
 
-      reply.send({
+      return reply.send({
         total: totalCount,
         page: pageNumber,
         limit: limitNumber,
@@ -44,7 +44,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       });
     } catch (err) {
       fastify.log.error(err);
-      reply.status(500).send({ error: "Failed to fetch voters" });
+      return reply.status(500).send({ error: "Failed to fetch voters" });
     }
   });
 
@@ -53,6 +53,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
     { preHandler: authenticateUser },
     async (req, reply) => {
       const { voters } = req.body;
+      let affectedVotersCount = 0;
 
       if (voters.length > 50) {
         return reply
@@ -63,7 +64,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       let connection;
       try {
         connection = await fastify.mysql.getConnection();
-        await connection.beginTransaction();
+        await connection.query("START TRANSACTION");
 
         for (const voter of voters) {
           const { id, img, location, images } = voter;
@@ -72,29 +73,35 @@ export async function voterRoutes(fastify: FastifyInstance) {
             throw new Error(`Voter ID is missing for one of the voters.`);
           }
 
-          await connection.query(
-            "UPDATE voters SET img = ?, location = ?, images = ? WHERE id = ?",
+          const [result] = await connection.query(
+            "UPDATE voters SET img = ?, location = ?, images = ?, has_been_data_gathered = 1 WHERE id = ? AND has_been_data_gathered = 0",
             [
               img,
-              location ? JSON.stringify(location) : null, // Serialize location to JSON
-              images ? JSON.stringify(images) : null, // Serialize images to JSON
+              location ? JSON.stringify(location) : null,
+              images ? JSON.stringify(images) : null,
               id,
             ]
           );
+
+          // Increment only if a row was affected
+          if ((result as RowDataPacket).affectedRows > 0) {
+            affectedVotersCount += 1;
+          }
         }
 
-        await connection.commit();
+        await connection.query("COMMIT");
 
-        reply.send({
+        return reply.send({
           success: true,
-          message: `${voters.length} voters updated successfully.`,
+          message: `${affectedVotersCount} voters updated successfully.`,
+          affectedVotersCount,
         });
       } catch (err) {
         if (connection) {
-          await connection.rollback();
+          await connection.query("ROLLBACK");
         }
         fastify.log.error("Error updating voters:", err);
-        reply.status(500).send({ error: "Failed to update voters" });
+        return reply.status(500).send({ error: "Failed to update voters" });
       } finally {
         if (connection) {
           connection.release();
