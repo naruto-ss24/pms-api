@@ -54,4 +54,6 @@ export type Voter = {
   } | null;
   images?: string[] | null;
   tags?: { tag: string; printedAt?: string | null }[] | null;
+  has_been_data_gathered?: boolean | null;
+  hash_id?: number | null;
 };
