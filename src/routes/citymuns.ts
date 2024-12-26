@@ -12,10 +12,10 @@ export async function citymunRoutes(fastify: FastifyInstance) {
         const [rows] = await fastify.mysql.query<(Citymun & RowDataPacket)[]>(
           "SELECT * FROM voter_city;"
         );
-        return reply.send(rows);
+        await reply.send(rows);
       } catch (err) {
         fastify.log.error(err);
-        return reply.status(500).send({ error: "Failed to fetch citymuns" });
+        await reply.status(500).send({ error: "Failed to fetch citymuns" });
       }
     }
   );

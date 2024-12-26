@@ -26,11 +26,10 @@ export async function voterRoutes(fastify: FastifyInstance) {
       );
 
       const totalPages = Math.ceil(totalCount / limitNumber);
-
       const nextPage = pageNumber < totalPages ? pageNumber + 1 : null;
       const prevPage = pageNumber > 1 ? pageNumber - 1 : null;
 
-      return reply.send({
+      await reply.send({
         total: totalCount,
         page: pageNumber,
         limit: limitNumber,
@@ -44,7 +43,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       });
     } catch (err) {
       fastify.log.error(err);
-      return reply.status(500).send({ error: "Failed to fetch voters" });
+      await reply.status(500).send({ error: "Failed to fetch voters" });
     }
   });
 
@@ -55,10 +54,12 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const { voters } = req.body;
       let affectedVotersCount = 0;
 
+      // Updated Error Handling for Large Payload
       if (voters.length > 50) {
-        return reply
+        await reply
           .status(400)
           .send({ error: "Cannot update more than 50 voters at a time." });
+        return;
       }
 
       let connection;
@@ -91,7 +92,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
         await connection.query("COMMIT");
 
-        return reply.send({
+        await reply.send({
           success: true,
           message: `${affectedVotersCount} voters updated successfully.`,
           affectedVotersCount,
@@ -100,8 +101,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
         if (connection) {
           await connection.query("ROLLBACK");
         }
+
         fastify.log.error("Error updating voters:", err);
-        return reply.status(500).send({ error: "Failed to update voters" });
+        await reply.status(500).send({ error: "Failed to update voters" });
       } finally {
         if (connection) {
           connection.release();

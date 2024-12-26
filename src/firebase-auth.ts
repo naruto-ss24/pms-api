@@ -14,14 +14,14 @@ admin.initializeApp({
 
 export const authenticateUser = async (
   request: FastifyRequest,
-  reply: FastifyReply,
-  done: Function
+  reply: FastifyReply
 ) => {
   try {
     const authorizationHeader = request.headers.authorization;
 
     if (!authorizationHeader) {
-      return reply.status(401).send({ message: "No token provided" });
+      await reply.status(401).send({ message: "No token provided" });
+      return; // Stop further execution
     }
 
     const token = authorizationHeader.split(" ")[1]; // assuming 'Bearer <token>'
@@ -29,9 +29,9 @@ export const authenticateUser = async (
 
     // Attach decoded token to request for further use
     request.user = decodedToken;
-    done();
   } catch (error) {
     console.error("Authentication error:", error);
-    return reply.status(401).send({ message: "Invalid token" });
+    await reply.status(401).send({ message: "Invalid token" });
+    return; // Stop further execution
   }
 };

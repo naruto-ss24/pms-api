@@ -12,10 +12,10 @@ export async function districtRoutes(fastify: FastifyInstance) {
         const [rows] = await fastify.mysql.query<(District & RowDataPacket)[]>(
           "SELECT * FROM voter_district;"
         );
-        return reply.send(rows);
+        await reply.send(rows);
       } catch (err) {
         fastify.log.error(err);
-        return reply.status(500).send({ error: "Failed to fetch districts" });
+        await reply.status(500).send({ error: "Failed to fetch districts" });
       }
     }
   );

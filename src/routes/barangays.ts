@@ -26,10 +26,10 @@ export async function barangayRoutes(fastify: FastifyInstance) {
           voter_district d ON b.areacode = d.code;
         `
         );
-        return reply.send(rows);
+        await reply.send(rows);
       } catch (err) {
         fastify.log.error(err);
-        return reply.status(500).send({ error: "Failed to fetch barangays" });
+        await reply.status(500).send({ error: "Failed to fetch barangays" });
       }
     }
   );
