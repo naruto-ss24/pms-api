@@ -21,4 +21,3 @@ if %errorlevel% neq 0 (
 )
 
 echo Backend started successfully.
-pause
