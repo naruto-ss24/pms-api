@@ -1,5 +1,4 @@
 node_modules
-firebase-admin.json
 *.cert
 *.key
 uploads
