@@ -1,6 +1,0 @@
-{"level":50,"time":1735271997917,"pid":3164,"hostname":"PIMS25","err":{"type":"Error","message":"Server requests authentication using unknown plugin auth_gssapi_client. See TODO: add plugins doco here on h
-ow to configure or author authentication plugins.","stack":"Error: Server requests authentication using unknown plugin auth_gssapi_client. See TODO: add plugins doco here on how to configure or author auth
-entication plugins.\n    at PromisePool.query (C:\\xampp\\htdocs\\pms-api\\node_modules\\mysql2\\promise.js:356:22)\n    at _createConnection (C:\\xampp\\htdocs\\pms-api\\node_modules\\@fastify\\mysql\\ind
-ex.js:73:10)\n    at fastifyMysql (C:\\xampp\\htdocs\\pms-api\\node_modules\\@fastify\\mysql\\index.js:13:3)\n    at Plugin.exec (C:\\xampp\\htdocs\\pms-api\\node_modules\\avvio\\lib\\plugin.js:125:28)\n
-  at Boot._loadPlugin (C:\\xampp\\htdocs\\pms-api\\node_modules\\avvio\\boot.js:432:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)","code":"AUTH_SWITCH_PLUGIN_ERROR
-"},"msg":"Server requests authentication using unknown plugin auth_gssapi_client. See TODO: add plugins doco here on how to configure or author authentication plugins."}

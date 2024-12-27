@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"  :: Change to the script's directory
+
 echo Starting Fastify backend...
 
 :: Start the server
