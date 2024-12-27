@@ -2,26 +2,35 @@
 cd /d "%~dp0"  :: Change to the script's directory
 echo Starting Fastify backend...
 
+:: Enable detailed logging
+set LOGFILE=error.log
+echo Logging to %LOGFILE%...
+echo > %LOGFILE%
+
 :: Check if Node.js is installed
 where node >nul 2>nul
 if %errorlevel% neq 0 (
     echo Node.js is not installed. Please install Node.js and try again.
+    echo Node.js is not installed. >> %LOGFILE%
     pause
     exit /b
 )
 
 :: Install dependencies
 echo Installing dependencies...
-npm install || (
+npm install >> %LOGFILE% 2>&1
+if %errorlevel% neq 0 (
     echo Failed to install dependencies!
+    echo Check error.log for details.
     pause
     exit /b
 )
 
 :: Build the application
 echo Building application...
-npm run build || (
-    echo Build failed!
+npm run build >> %LOGFILE% 2>&1
+if %errorlevel% neq 0 (
+    echo Build failed! Check error.log for details.
     pause
     exit /b
 )
