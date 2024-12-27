@@ -12,8 +12,7 @@ if %errorlevel% neq 0 (
 
 :: Install dependencies
 echo Installing dependencies...
-npm install
-if %errorlevel% neq 0 (
+npm install || (
     echo Failed to install dependencies!
     pause
     exit /b
@@ -21,8 +20,7 @@ if %errorlevel% neq 0 (
 
 :: Build the application
 echo Building application...
-npm run build
-if %errorlevel% neq 0 (
+npm run build || (
     echo Build failed!
     pause
     exit /b
@@ -31,10 +29,24 @@ if %errorlevel% neq 0 (
 :: Start the server
 echo Starting server...
 start cmd /k "npm start"  :: Opens a new terminal and keeps the server running
+if %errorlevel% neq 0 (
+    echo Failed to start the server!
+    pause
+    exit /b
+)
+
+:: Wait for server to start before opening ngrok
+timeout /t 5
 
 :: Start ngrok in a separate terminal
 echo Starting ngrok tunnel...
 start cmd /k "ngrok http --domain=moved-mink-briefly.ngrok-free.app 8080"
+if %errorlevel% neq 0 (
+    echo Failed to start ngrok!
+    pause
+    exit /b
+)
 
 :: Pause to keep the first window open
+echo Backend started successfully.
 pause
