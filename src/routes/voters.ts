@@ -68,15 +68,16 @@ export async function voterRoutes(fastify: FastifyInstance) {
         await connection.query("START TRANSACTION");
 
         for (const voter of voters) {
-          const { id, img, location, images } = voter;
+          const { id, contactnumber, img, location, images } = voter;
 
           if (!id) {
             throw new Error(`Voter ID is missing for one of the voters.`);
           }
 
           const [result] = await connection.query(
-            "UPDATE voters SET img = ?, location = ?, images = ?, has_been_data_gathered = 1 WHERE id = ? AND has_been_data_gathered = 0",
+            "UPDATE voters SET contactnumber = ?, img = ?, location = ?, images = ?, has_been_data_gathered = 1 WHERE id = ?",
             [
+              contactnumber,
               img,
               location ? JSON.stringify(location) : null,
               images ? JSON.stringify(images) : null,
