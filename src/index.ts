@@ -43,7 +43,7 @@ fastify.get("/", function (req, reply) {
 
 fastify.get("/check-updates", function (req, reply) {
   reply.send({
-    version: "1.1.9",
+    version: "1.0.0",
     forceUpdate: true,
     updateUrl: "https://expo.dev/artifacts/eas/6Ghcfr7RxWQn58z9X1t8o1.apk",
   });
