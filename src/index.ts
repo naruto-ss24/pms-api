@@ -45,7 +45,7 @@ fastify.get("/check-updates", function (req, reply) {
   reply.send({
     version: "1.0.0",
     forceUpdate: true,
-    updateUrl: "https://expo.dev/artifacts/eas/6Ghcfr7RxWQn58z9X1t8o1.apk",
+    updateUrl: "https://expo.dev/artifacts/eas/qjvkewJdVrgWAUeBsNms1V.apk",
   });
 });
 
