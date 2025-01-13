@@ -41,14 +41,6 @@ fastify.get("/", function (req, reply) {
   reply.send({ message: "API server is running..." });
 });
 
-fastify.get("/check-updates", function (req, reply) {
-  reply.send({
-    version: "1.0.0",
-    forceUpdate: true,
-    updateUrl: "https://expo.dev/artifacts/eas/qjvkewJdVrgWAUeBsNms1V.apk",
-  });
-});
-
 fastify.post<{ Querystring: { folder: string } }>(
   "/upload-image",
   { preHandler: authenticateUser },
