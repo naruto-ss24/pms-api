@@ -7,6 +7,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import path from "path";
 import fs from "fs";
+import fastifyStatic from "@fastify/static";
 import { pipeline } from "stream/promises";
 import { districtRoutes } from "./routes/districts";
 import { citymunRoutes } from "./routes/citymuns";
@@ -36,6 +37,11 @@ fastify.register(cors, {
 });
 
 fastify.register(multipart);
+
+fastify.register(fastifyStatic, {
+  root: path.join(__dirname, "../uploads"), // Adjust the path as needed
+  prefix: "/uploads/", // Files will be served at e.g. http://host:port/uploads/<filename>
+});
 
 fastify.get("/", function (req, reply) {
   reply.send({ message: "API server is running..." });
