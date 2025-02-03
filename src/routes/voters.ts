@@ -47,6 +47,33 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.get<{
+    Params: { id: number };
+  }>("/voter/:id", { preHandler: authenticateUser }, async (req, reply) => {
+    const { id } = req.params;
+
+    try {
+      // Query the database for a single voter with the provided id
+      const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
+        "SELECT * FROM voters WHERE id = ?",
+        [id]
+      );
+
+      if (rows.length === 0) {
+        // If no voter is found, return a 404 error response
+        return reply.status(404).send({ error: "Voter not found" });
+      }
+
+      // Return the voter data (assuming id is unique, so only one row will be returned)
+      await reply.send({
+        data: rows[0],
+      });
+    } catch (err) {
+      fastify.log.error(err);
+      await reply.status(500).send({ error: "Failed to fetch voter" });
+    }
+  });
+
   fastify.post<{ Body: { voters: Partial<Voter>[] } }>(
     "/voters/upload-chunk",
     { preHandler: authenticateUser },
