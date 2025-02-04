@@ -100,7 +100,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get(
-    "/cluster-data",
+    "/clustered-data",
     { preHandler: authenticateUser },
     async (req, reply) => {
       try {

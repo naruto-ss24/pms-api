@@ -13,7 +13,7 @@ if %errorlevel% neq 0 (
 
 :: Start ngrok in a separate terminal
 echo Starting ngrok tunnel...
-start cmd /k "ngrok http --domain=moved-mink-briefly.ngrok-free.app 8080"
+start cmd /k "ngrok http --domain=pms-api.ngrok.app 10.10.11.104:8080"
 if %errorlevel% neq 0 (
     echo Failed to start ngrok!
     pause
