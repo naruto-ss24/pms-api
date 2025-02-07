@@ -12,6 +12,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
   }>("/barangays", { preHandler: authenticateUser }, async (req, reply) => {
     try {
       const { brgy_code } = req.query;
+      const code = brgy_code ?? "AR1002-MUN100001";
 
       const [rows] = await fastify.mysql.query<(Barangay & RowDataPacket)[]>(
         `
@@ -29,7 +30,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
         JOIN 
           voter_district d ON b.areacode = d.code
         WHERE
-          b.code like "${brgy_code}%"
+          b.code like "${code}%"
         `
       );
       await reply.send(rows);
