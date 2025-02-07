@@ -86,7 +86,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
           FROM 
             voters v
           WHERE 
-            v.brgy_code = ?
+            v.brgy_code like ?
           GROUP BY v.brgy_code
         `;
 
@@ -99,7 +99,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
           C_votes: number;
         }[] &
           RowDataPacket[]
-      >(query, [brgy_code]);
+      >(query, [brgy_code ? brgy_code : "AR1002-MUN100001%"]);
 
       // If no matching barangay is found, return a 404 error
       if (rows.length === 0) {
