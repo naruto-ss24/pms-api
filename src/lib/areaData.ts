@@ -1,4 +1,6 @@
-export const dipologAreaData = [
+import { AreaData } from "../types/area-data";
+
+export const dipologAreaData: AreaData[] = [
   {
     id: "AR1002-MUN100001-BRGY10000001",
     properties: [],

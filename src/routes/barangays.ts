@@ -4,15 +4,17 @@ import { RowDataPacket } from "@fastify/mysql";
 import { authenticateUser } from "../firebase-auth";
 import { dipologBarangays } from "../lib/geojson";
 import { fetchVoterLocations } from "../lib/utils";
+import { GeoJSONFeature, GeoJSONFeatureCollection } from "../types/geojson";
 
 export async function barangayRoutes(fastify: FastifyInstance) {
-  fastify.get(
-    "/barangays",
-    { preHandler: authenticateUser },
-    async (req, reply) => {
-      try {
-        const [rows] = await fastify.mysql.query<(Barangay & RowDataPacket)[]>(
-          `
+  fastify.get<{
+    Querystring: { brgy_code: string };
+  }>("/barangays", { preHandler: authenticateUser }, async (req, reply) => {
+    try {
+      const { brgy_code } = req.query;
+
+      const [rows] = await fastify.mysql.query<(Barangay & RowDataPacket)[]>(
+        `
         SELECT 
           b.name,
           c.name AS citymun, 
@@ -25,28 +27,30 @@ export async function barangayRoutes(fastify: FastifyInstance) {
         JOIN 
           voter_city c ON b.muncode = c.code
         JOIN 
-          voter_district d ON b.areacode = d.code;
+          voter_district d ON b.areacode = d.code
+        WHERE
+          b.code like "${brgy_code}%"
         `
-        );
-        await reply.send(rows);
-      } catch (err) {
-        fastify.log.error(err);
-        await reply.status(500).send({ error: "Failed to fetch barangays" });
-      }
+      );
+      await reply.send(rows);
+    } catch (err) {
+      fastify.log.error(err);
+      await reply.status(500).send({ error: "Failed to fetch barangays" });
     }
-  );
+  });
 
   fastify.get<{
-    Querystring: { brgy_code?: string };
-  }>("/geojson", async (req, reply) => {
+    Querystring: { brgy_code: string };
+  }>("/geojson", { preHandler: authenticateUser }, async (req, reply) => {
     try {
       const { brgy_code } = req.query;
 
       // If brgy_code is provided, filter by it
       if (brgy_code) {
-        const filteredFeatures = dipologBarangays.features.filter(
-          (feature) => feature.properties.id === brgy_code
-        );
+        const filteredFeatures: GeoJSONFeature[] =
+          dipologBarangays.features.filter((feature) =>
+            feature.properties.id.includes(brgy_code)
+          );
 
         // If no matching barangay is found, return a 404 error
         if (filteredFeatures.length === 0) {
@@ -54,7 +58,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
         }
 
         // Send the filtered GeoJSON
-        const filteredGeoJSON = {
+        const filteredGeoJSON: GeoJSONFeatureCollection = {
           ...dipologBarangays,
           features: filteredFeatures,
         };
@@ -71,8 +75,8 @@ export async function barangayRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get<{
-    Querystring: { brgy_code?: string };
-  }>("/area-data", async (req, reply) => {
+    Querystring: { brgy_code: string };
+  }>("/area-data", { preHandler: authenticateUser }, async (req, reply) => {
     try {
       const { brgy_code } = req.query;
 
@@ -86,7 +90,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
           FROM 
             voters v
           WHERE 
-            v.brgy_code like ?
+            v.brgy_code like "${brgy_code}%"
           GROUP BY v.brgy_code
         `;
 
@@ -99,7 +103,7 @@ export async function barangayRoutes(fastify: FastifyInstance) {
           C_votes: number;
         }[] &
           RowDataPacket[]
-      >(query, [brgy_code ? brgy_code : "AR1002-MUN100001%"]);
+      >(query);
 
       // If no matching barangay is found, return a 404 error
       if (rows.length === 0) {
@@ -126,8 +130,8 @@ export async function barangayRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get<{
-    Querystring: { brgy_code: string; type: string };
-  }>("/heatmap-data", async (req, reply) => {
+    Querystring: { brgy_code: string; type?: string };
+  }>("/heatmap-data", { preHandler: authenticateUser }, async (req, reply) => {
     try {
       const { brgy_code, type } = req.query;
 
@@ -138,30 +142,17 @@ export async function barangayRoutes(fastify: FastifyInstance) {
             voters v
           WHERE 
             v.location IS NOT NULL
+            AND v.brgy_code LIKE "${brgy_code}%"
       `;
 
-      // Add conditions to the query based on the provided parameters
-      if (brgy_code !== undefined) {
-        query += ` AND v.brgy_code = ?`;
-      }
-
-      if (type !== undefined) {
+      if (type) {
         query += ` AND v.type = ?`;
-      }
-
-      // Define the parameters for the query, ensuring correct order
-      const params: (string | number)[] = [];
-      if (type !== undefined) {
-        params.push(type);
-      }
-      if (brgy_code !== undefined) {
-        params.push(brgy_code);
       }
 
       // Execute the query with the parameters
       const [rows] = await fastify.mysql.query<
         ({ location: string } & RowDataPacket)[]
-      >(query, params);
+      >(query, [type ? [type] : []]);
 
       // Format the location data
       const formattedRows = rows.map((row) => {
@@ -181,14 +172,14 @@ export async function barangayRoutes(fastify: FastifyInstance) {
 
   fastify.get<{
     Querystring: { brgy_code: string };
-  }>("/cluster-data", async (req, reply) => {
+  }>("/cluster-data", { preHandler: authenticateUser }, async (req, reply) => {
     try {
       const { brgy_code } = req.query;
 
       // Fetch locations for all types (1, 0, 2) using the helper function
-      const a = await fetchVoterLocations(fastify, 1, brgy_code);
-      const b = await fetchVoterLocations(fastify, 0, brgy_code);
-      const c = await fetchVoterLocations(fastify, 2, brgy_code);
+      const a = await fetchVoterLocations(fastify, brgy_code, 1);
+      const b = await fetchVoterLocations(fastify, brgy_code, 0);
+      const c = await fetchVoterLocations(fastify, brgy_code, 2);
 
       await reply.send([a, b, c]);
     } catch (err) {

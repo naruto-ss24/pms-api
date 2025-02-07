@@ -1,4 +1,6 @@
-export const dipologBarangays = {
+import { GeoJSONFeatureCollection } from "../types/geojson";
+
+export const dipologBarangays: GeoJSONFeatureCollection = {
   type: "FeatureCollection",
   features: [
     {
