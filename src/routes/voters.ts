@@ -47,6 +47,66 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.post<{
+    Body: { hash_ids: string[]; page?: number; limit?: number };
+  }>("/voters/by-hashids", async (req, reply) => {
+    const { hash_ids, page = 1, limit = 100 } = req.body;
+    const pageNumber = Number(page);
+    const limitNumber = Number(limit);
+    const offset = (pageNumber - 1) * limitNumber;
+
+    if (!Array.isArray(hash_ids) || hash_ids.length === 0) {
+      return reply
+        .status(400)
+        .send({ error: "hash_ids must be a non-empty array." });
+    }
+
+    // Build placeholders for the IN clause
+    const placeholders = hash_ids.map(() => "?").join(",");
+
+    try {
+      // Count the total voters matching the given hash_ids
+      const [totalCountResult] = await fastify.mysql.query<
+        ({ total: number } & RowDataPacket)[]
+      >(
+        `SELECT COUNT(*) AS total FROM voters WHERE hash_id IN (${placeholders})`,
+        hash_ids
+      );
+      const totalCount = totalCountResult[0].total;
+
+      // Query to fetch paginated voter data,
+      // joining voter_barangay to get the barangay name instead of the code.
+      const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
+        `SELECT v.id, v.hash_id, v.img, v.fullname, vb.name AS barangay
+         FROM voters v
+         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+         WHERE v.hash_id IN (${placeholders})
+         LIMIT ? OFFSET ?`,
+        [...hash_ids, limitNumber, offset]
+      );
+
+      const totalPages = Math.ceil(totalCount / limitNumber);
+      const nextPage = pageNumber < totalPages ? pageNumber + 1 : null;
+      const prevPage = pageNumber > 1 ? pageNumber - 1 : null;
+
+      return reply.send({
+        total: totalCount,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages,
+        hasNextPage: nextPage !== null,
+        hasPrevPage: prevPage !== null,
+        nextPage,
+        prevPage,
+        numberOfRows: rows.length,
+        data: rows,
+      });
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: "Failed to fetch voters" });
+    }
+  });
+
   fastify.get<{
     Params: { id: number };
   }>("/voter/:id", { preHandler: authenticateUser }, async (req, reply) => {
