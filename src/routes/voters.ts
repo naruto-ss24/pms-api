@@ -48,9 +48,14 @@ export async function voterRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post<{
-    Body: { hash_ids: string[]; page?: number; limit?: number };
+    Body: {
+      hash_ids: string[];
+      page?: number;
+      limit?: number;
+      search?: string;
+    };
   }>("/voters/by-hashids", async (req, reply) => {
-    const { hash_ids, page = 1, limit = 100 } = req.body;
+    const { hash_ids, page = 1, limit = 100, search = "" } = req.body;
     const pageNumber = Number(page);
     const limitNumber = Number(limit);
     const offset = (pageNumber - 1) * limitNumber;
@@ -63,26 +68,44 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
     // Build placeholders for the IN clause
     const placeholders = hash_ids.map(() => "?").join(",");
+    // If search is provided and not empty, add an extra condition for fullname.
+    const hasSearch = search && search.trim() !== "";
+    const searchClause = hasSearch ? " AND v.fullname LIKE ?" : "";
+    const searchParam = hasSearch ? `%${search}%` : undefined;
 
     try {
-      // Count the total voters matching the given hash_ids
+      // Count total voters matching the given hash_ids (and search if provided)
+      const countQuery = `
+        SELECT COUNT(*) AS total 
+        FROM voters v 
+        WHERE v.hash_id IN (${placeholders})${searchClause}
+      `;
+      const countParams = hasSearch
+        ? [...hash_ids, searchParam]
+        : [...hash_ids];
+
       const [totalCountResult] = await fastify.mysql.query<
         ({ total: number } & RowDataPacket)[]
-      >(
-        `SELECT COUNT(*) AS total FROM voters WHERE hash_id IN (${placeholders})`,
-        hash_ids
-      );
+      >(countQuery, countParams);
       const totalCount = totalCountResult[0].total;
 
-      // Query to fetch paginated voter data,
-      // joining voter_barangay to get the barangay name instead of the code.
+      // Query to fetch paginated voter data, joining voter_barangay to get the barangay name,
+      // applying the optional search filter, and sorting by fullname.
+      const dataQuery = `
+        SELECT v.id, v.hash_id, v.img, v.fullname, vb.name AS barangay
+        FROM voters v
+        LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+        WHERE v.hash_id IN (${placeholders})${searchClause}
+        ORDER BY v.fullname
+        LIMIT ? OFFSET ?
+      `;
+      const dataParams = hasSearch
+        ? [...hash_ids, searchParam, limitNumber, offset]
+        : [...hash_ids, limitNumber, offset];
+
       const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
-        `SELECT v.id, v.hash_id, v.img, v.fullname, vb.name AS barangay
-         FROM voters v
-         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
-         WHERE v.hash_id IN (${placeholders})
-         LIMIT ? OFFSET ?`,
-        [...hash_ids, limitNumber, offset]
+        dataQuery,
+        dataParams
       );
 
       const totalPages = Math.ceil(totalCount / limitNumber);
