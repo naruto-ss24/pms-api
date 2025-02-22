@@ -175,12 +175,11 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const { voters } = req.body;
       let affectedVotersCount = 0;
 
-      // Updated Error Handling for Large Payload
+      // Limit the payload to 50 voters at a time.
       if (voters.length > 50) {
-        await reply
+        return reply
           .status(400)
           .send({ error: "Cannot update more than 50 voters at a time." });
-        return;
       }
 
       let connection;
@@ -189,32 +188,44 @@ export async function voterRoutes(fastify: FastifyInstance) {
         await connection.query("START TRANSACTION");
 
         for (const voter of voters) {
-          const { id, contactnumber, img, location, images } = voter;
+          const {
+            id,
+            contactnumber,
+            img,
+            address,
+            sex,
+            bdate,
+            location,
+            images,
+          } = voter;
 
           if (!id) {
-            throw new Error(`Voter ID is missing for one of the voters.`);
+            throw new Error("Voter ID is missing for one of the voters.");
           }
 
           const [result] = await connection.query(
-            "UPDATE voters SET contactnumber = ?, img = ?, location = ?, images = ?, has_been_data_gathered = 1 WHERE id = ?",
+            "UPDATE voters SET contactnumber = ?, img = ?, address = ?, sex = ?, bdate = ?, location = ?, images = ?, has_been_data_gathered = 1 WHERE id = ?",
             [
               contactnumber,
               img,
+              address,
+              sex,
+              bdate,
               location ? JSON.stringify(location) : null,
               images ? JSON.stringify(images) : null,
               id,
             ]
           );
 
-          // Increment only if a row was affected
-          if ((result as RowDataPacket).affectedRows > 0) {
+          // Increment affectedVotersCount if a row was updated.
+          if ((result as any).affectedRows > 0) {
             affectedVotersCount += 1;
           }
         }
 
         await connection.query("COMMIT");
 
-        await reply.send({
+        return reply.send({
           success: true,
           message: `${affectedVotersCount} voters updated successfully.`,
           affectedVotersCount,
@@ -223,9 +234,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
         if (connection) {
           await connection.query("ROLLBACK");
         }
-
         fastify.log.error("Error updating voters:", err);
-        await reply.status(500).send({ error: "Failed to update voters" });
+        return reply.status(500).send({ error: "Failed to update voters" });
       } finally {
         if (connection) {
           connection.release();
