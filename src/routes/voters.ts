@@ -103,7 +103,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       // Query to fetch paginated voter data, joining voter_barangay to get the barangay name,
       // applying the optional search filter and img filter, and sorting by fullname and barangay.
       const dataQuery = `
-        SELECT v.id, v.hash_id, v.img, v.fullname, vb.name AS barangay
+        SELECT v.id, v.hash_id, v.img, v.fullname, vb.code AS barangayCode, vb.name AS barangay
         FROM voters v
         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
         WHERE v.hash_id IN (${placeholders})${searchClause}${imgClause}
