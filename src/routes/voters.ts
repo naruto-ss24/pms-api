@@ -49,7 +49,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.get<{
     Params: { id: number };
-  }>("/voter/:id", { preHandler: authenticateUser }, async (req, reply) => {
+  }>("/voters/:id", { preHandler: authenticateUser }, async (req, reply) => {
     const { id } = req.params;
 
     try {
