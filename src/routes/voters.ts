@@ -224,7 +224,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         params.push(...barangayCodes);
       }
 
-      // Combine all conditions into a WHERE clause
+      // Combine conditions into a WHERE clause
       const whereClause =
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
@@ -240,15 +240,18 @@ export async function voterRoutes(fastify: FastifyInstance) {
         >(countQuery, params);
         const totalCount = totalCountResult[0].total;
 
-        // Query to fetch paginated voter data, joining tables to retrieve barangay, city, and district names
+        // Query to fetch paginated voter data.
+        // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
           SELECT v.id, v.hash_id, v.img, v.fullname, 
                  vb.code AS barangayCode, vb.name AS barangay, 
-                 vc.name AS citymun, vd.name AS district
+                 vc.name AS citymun, vd.name AS district,
+                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
           LEFT JOIN voter_city vc ON v.city_code = vc.code
           LEFT JOIN voter_district vd ON v.district_code = vd.code
+          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
           ${whereClause}
           ORDER BY v.fullname, vb.name
           LIMIT ? OFFSET ?
@@ -315,7 +318,6 @@ export async function voterRoutes(fastify: FastifyInstance) {
           .status(400)
           .send({ error: "hash_ids must be a non-empty array." });
       }
-
       // Check that barangayCodes is provided and is a non-empty array.
       if (!Array.isArray(barangayCodes) || barangayCodes.length === 0) {
         return reply
@@ -378,14 +380,17 @@ export async function voterRoutes(fastify: FastifyInstance) {
         const totalCount = totalCountResult[0].total;
 
         // Query to fetch paginated absentee data.
+        // Added computed "vgl" field.
         const dataQuery = `
           SELECT v.id, v.hash_id, v.img, v.fullname, 
                  vb.code AS barangayCode, vb.name AS barangay, 
-                 vc.name AS citymun, vd.name AS district
+                 vc.name AS citymun, vd.name AS district,
+                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
           LEFT JOIN voter_city vc ON v.city_code = vc.code
           LEFT JOIN voter_district vd ON v.district_code = vd.code
+          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
           ${whereClause}
           ORDER BY v.fullname, vb.name
           LIMIT ? OFFSET ?
