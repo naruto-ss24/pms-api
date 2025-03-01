@@ -544,4 +544,224 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  fastify.post<{
+    Body: {
+      voterIds: string[];
+      barangayCodes?: string[];
+      participantType?: "leaders" | "members";
+      imgIsNull?: boolean;
+    };
+  }>(
+    "/voters/download-participants",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
+
+      // Validate that voterIds is provided and non-empty
+      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+        return reply
+          .status(400)
+          .send({ error: "voterIds must be a non-empty array." });
+      }
+
+      // Build dynamic WHERE conditions and parameters
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      // 1. Filter by voterIds
+      const idPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id IN (${idPlaceholders})`);
+      params.push(...voterIds);
+
+      // 2. Ensure only event participants (group_id != 0)
+      conditions.push(`v.group_id != 0`);
+
+      // 3. Filter based on participantType if provided
+      if (participantType === "leaders") {
+        conditions.push(`v.is_grpleader = 1`);
+      } else if (participantType === "members") {
+        conditions.push(`v.is_grpleader = 0`);
+      }
+
+      // 4. Only query voters with type 0 or 1
+      conditions.push(`v.type IN (0, 1)`);
+
+      // 5. Optional filter for img being NULL
+      if (imgIsNull) {
+        conditions.push(`v.img IS NULL`);
+      }
+
+      // 6. Optional filter for barangayCodes if provided
+      if (Array.isArray(barangayCodes) && barangayCodes.length > 0) {
+        const barangayPlaceholders = barangayCodes.map(() => "?").join(",");
+        conditions.push(`v.brgy_code IN (${barangayPlaceholders})`);
+        params.push(...barangayCodes);
+      }
+
+      // Combine conditions into a WHERE clause
+      const whereClause =
+        conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+      try {
+        // Query that selects only fullname and computed vgl
+        const csvQuery = `
+          SELECT v.fullname,
+                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+          FROM voters v
+          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+          ${whereClause}
+          ORDER BY v.fullname
+        `;
+
+        // Destructure the query result to get the rows array
+        const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
+
+        // Helper function to escape CSV values
+        const escapeCSV = (value: string): string => {
+          if (
+            value.includes(",") ||
+            value.includes('"') ||
+            value.includes("\n")
+          ) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        };
+
+        // Build CSV content with a header row
+        const header = "fullname,vgl";
+        const csvRows = [header];
+        for (const row of rows) {
+          const fullname = escapeCSV(String(row.fullname));
+          const vgl = escapeCSV(String(row.vgl));
+          csvRows.push(`${fullname},${vgl}`);
+        }
+        const csvData = csvRows.join("\n");
+
+        // Set headers to trigger file download
+        reply.header("Content-Type", "text/csv");
+        // Filename here is a default; your client can set a dynamic filename if needed.
+        reply.header(
+          "Content-Disposition",
+          "attachment; filename=participants.csv"
+        );
+        return reply.send(csvData);
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to download participants" });
+      }
+    }
+  );
+
+  fastify.post<{
+    Body: {
+      voterIds: string[];
+      barangayCodes?: string[];
+      participantType?: "leaders" | "members";
+      imgIsNull?: boolean;
+    };
+  }>(
+    "/voters/download-absentees",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
+
+      // Validate that voterIds is provided and non-empty.
+      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+        return reply
+          .status(400)
+          .send({ error: "voterIds must be a non-empty array." });
+      }
+
+      // Build dynamic WHERE conditions and parameter array.
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      // 1. For absentees, exclude voters in the provided voterIds.
+      const idPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id NOT IN (${idPlaceholders})`);
+      params.push(...voterIds);
+
+      // 2. Ensure only expected participants (group_id != 0).
+      conditions.push(`v.group_id != 0`);
+
+      // 3. Filter based on participantType if provided.
+      if (participantType === "leaders") {
+        conditions.push(`v.is_grpleader = 1`);
+      } else if (participantType === "members") {
+        conditions.push(`v.is_grpleader = 0`);
+      }
+
+      // 4. Only query voters with type 0 or 1.
+      conditions.push(`v.type IN (0, 1)`);
+
+      // 5. Optional filter for img being NULL.
+      if (imgIsNull) {
+        conditions.push(`v.img IS NULL`);
+      }
+
+      // 6. Optional filter for barangayCodes.
+      if (Array.isArray(barangayCodes) && barangayCodes.length > 0) {
+        const barangayPlaceholders = barangayCodes.map(() => "?").join(",");
+        conditions.push(`v.brgy_code IN (${barangayPlaceholders})`);
+        params.push(...barangayCodes);
+      }
+
+      const whereClause =
+        conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+      try {
+        // Query to select only fullname and computed vgl.
+        const csvQuery = `
+          SELECT v.fullname,
+                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+          FROM voters v
+          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+          ${whereClause}
+          ORDER BY v.fullname
+        `;
+
+        // Destructure the query result to obtain the rows.
+        const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
+
+        // Helper function to escape CSV values.
+        const escapeCSV = (value: string) => {
+          if (
+            value.includes(",") ||
+            value.includes('"') ||
+            value.includes("\n")
+          ) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        };
+
+        // Build CSV content with a header row.
+        const header = "fullname,vgl";
+        const csvRows = [header];
+        for (const row of rows) {
+          const fullname = escapeCSV(String(row.fullname));
+          const vgl = escapeCSV(String(row.vgl));
+          csvRows.push(`${fullname},${vgl}`);
+        }
+        const csvData = csvRows.join("\n");
+
+        // Set headers to trigger file download.
+        reply.header("Content-Type", "text/csv");
+        reply.header(
+          "Content-Disposition",
+          "attachment; filename=absentees.csv"
+        );
+        return reply.send(csvData);
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to download absentees" });
+      }
+    }
+  );
 }
