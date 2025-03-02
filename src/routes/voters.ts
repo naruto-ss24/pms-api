@@ -152,6 +152,142 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
+      hashIds: string[];
+      barangayCodes?: string[];
+      participantType?: "leaders" | "members";
+      imgIsNull?: boolean;
+      page?: number;
+      limit?: number;
+      search?: string;
+    };
+  }>(
+    "/voters/by-hashids",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const {
+        hashIds,
+        barangayCodes,
+        participantType,
+        page = 1,
+        limit = 100,
+        search = "",
+        imgIsNull = false,
+      } = req.body;
+      const pageNumber = Number(page);
+      const limitNumber = Number(limit);
+      const offset = (pageNumber - 1) * limitNumber;
+
+      if (!Array.isArray(hashIds) || hashIds.length === 0) {
+        return reply
+          .status(400)
+          .send({ error: "hashIds must be a non-empty array." });
+      }
+
+      // Build dynamic WHERE conditions and parameter array
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      // 1. Filter by hashIds
+      const voterIdPlaceholders = hashIds.map(() => "?").join(",");
+      conditions.push(`v.hash_id IN (${voterIdPlaceholders})`);
+      params.push(...hashIds);
+
+      // 2. Ensure only event participants (group_id != 0)
+      conditions.push(`v.group_id != 0`);
+
+      // 3. Add condition based on participantType if provided
+      if (participantType === "leaders") {
+        conditions.push(`v.is_grpleader = 1`);
+      } else if (participantType === "members") {
+        conditions.push(`v.is_grpleader = 0`);
+      }
+      // If participantType is not provided, no extra is_grpleader filter is applied.
+
+      // 4. Only query voters with type 0 or 1
+      conditions.push(`v.type IN (0, 1)`);
+
+      // 5. Optional search filter on fullname
+      if (search && search.trim() !== "") {
+        conditions.push(`v.fullname LIKE ?`);
+        params.push(`%${search}%`);
+      }
+
+      // 6. Optional filter for img being NULL
+      if (imgIsNull) {
+        conditions.push(`v.img IS NULL`);
+      }
+
+      // 7. Optional filter for barangayCodes
+      if (Array.isArray(barangayCodes) && barangayCodes.length > 0) {
+        const barangayPlaceholders = barangayCodes.map(() => "?").join(",");
+        conditions.push(`v.brgy_code IN (${barangayPlaceholders})`);
+        params.push(...barangayCodes);
+      }
+
+      // Combine conditions into a WHERE clause
+      const whereClause =
+        conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+      try {
+        // Count total voters matching the conditions
+        const countQuery = `
+          SELECT COUNT(*) AS total 
+          FROM voters v 
+          ${whereClause}
+        `;
+        const [totalCountResult] = await fastify.mysql.query<
+          ({ total: number } & RowDataPacket)[]
+        >(countQuery, params);
+        const totalCount = totalCountResult[0].total;
+
+        // Query to fetch paginated voter data.
+        // Added computed column "vgl" using a LEFT JOIN.
+        const dataQuery = `
+          SELECT v.id, v.hash_id, v.img, v.fullname, 
+                 vb.code AS barangayCode, vb.name AS barangay, 
+                 vc.name AS citymun, vd.name AS district,
+                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+          FROM voters v
+          LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+          LEFT JOIN voter_city vc ON v.city_code = vc.code
+          LEFT JOIN voter_district vd ON v.district_code = vd.code
+          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+          ${whereClause}
+          ORDER BY v.fullname, vb.name
+          LIMIT ? OFFSET ?
+        `;
+        // Append LIMIT and OFFSET values to the parameters for the data query.
+        const dataParams = [...params, limitNumber, offset];
+        const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
+          dataQuery,
+          dataParams
+        );
+
+        const totalPages = Math.ceil(totalCount / limitNumber);
+        const nextPage = pageNumber < totalPages ? pageNumber + 1 : null;
+        const prevPage = pageNumber > 1 ? pageNumber - 1 : null;
+
+        return reply.send({
+          total: totalCount,
+          page: pageNumber,
+          limit: limitNumber,
+          totalPages,
+          hasNextPage: nextPage !== null,
+          hasPrevPage: prevPage !== null,
+          nextPage,
+          prevPage,
+          numberOfRows: rows.length,
+          data: rows,
+        });
+      } catch (err) {
+        fastify.log.error(err);
+        return reply.status(500).send({ error: "Failed to fetch voters" });
+      }
+    }
+  );
+
+  fastify.post<{
+    Body: {
       voterIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
@@ -188,8 +324,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const params: any[] = [];
 
       // 1. Filter by voterIds
-      const idPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id IN (${idPlaceholders})`);
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id IN (${voterIdPlaceholders})`);
       params.push(...voterIds);
 
       // 2. Ensure only event participants (group_id != 0)
@@ -330,8 +466,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const params: any[] = [];
 
       // 1. Exclude voters whose id is in the provided list.
-      const idPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id NOT IN (${idPlaceholders})`);
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id NOT IN (${voterIdPlaceholders})`);
       params.push(...voterIds);
 
       // 2. Only consider expected participants.
@@ -466,9 +602,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
       `;
 
       // --- Actual Participants Query ---
-      const idPlaceholders = voterIds.map(() => "?").join(",");
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
       const actualConditions = [
-        `v.id IN (${idPlaceholders})`,
+        `v.id IN (${voterIdPlaceholders})`,
         `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
         ...commonConditions,
       ];
@@ -570,8 +706,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const params: any[] = [];
 
       // 1. Filter by voterIds
-      const idPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id IN (${idPlaceholders})`);
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id IN (${voterIdPlaceholders})`);
       params.push(...voterIds);
 
       // 2. Ensure only event participants (group_id != 0)
@@ -681,8 +817,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const params: any[] = [];
 
       // 1. For absentees, exclude voters in the provided voterIds.
-      const idPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id NOT IN (${idPlaceholders})`);
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id NOT IN (${voterIdPlaceholders})`);
       params.push(...voterIds);
 
       // 2. Ensure only expected participants (group_id != 0).
