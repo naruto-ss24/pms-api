@@ -188,8 +188,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const params: any[] = [];
 
       // 1. Filter by hashIds
-      const voterIdPlaceholders = hashIds.map(() => "?").join(",");
-      conditions.push(`v.hash_id IN (${voterIdPlaceholders})`);
+      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
+      conditions.push(`v.hash_id IN (${hashIdPlaceholders})`);
       params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
@@ -288,7 +288,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      voterIds: string[];
+      hashIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
@@ -301,7 +301,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
     { preHandler: authenticateUser },
     async (req, reply) => {
       const {
-        voterIds,
+        hashIds,
         barangayCodes,
         participantType,
         page = 1,
@@ -313,20 +313,20 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const limitNumber = Number(limit);
       const offset = (pageNumber - 1) * limitNumber;
 
-      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      if (!Array.isArray(hashIds) || hashIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "voterIds must be a non-empty array." });
+          .send({ error: "hashIds must be a non-empty array." });
       }
 
       // Build dynamic WHERE conditions and parameter array
       const conditions: string[] = [];
       const params: any[] = [];
 
-      // 1. Filter by voterIds
-      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id IN (${voterIdPlaceholders})`);
-      params.push(...voterIds);
+      // 1. Filter by hashIds
+      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
+      conditions.push(`v.hash_id IN (${hashIdPlaceholders})`);
+      params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
       conditions.push(`v.group_id != 0`);
@@ -424,7 +424,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      voterIds: string[];
+      hashIds: string[];
       barangayCodes: string[]; // now mandatory
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
@@ -437,7 +437,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
     { preHandler: authenticateUser },
     async (req, reply) => {
       const {
-        voterIds,
+        hashIds,
         barangayCodes,
         participantType,
         page = 1,
@@ -449,10 +449,10 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const limitNumber = Number(limit);
       const offset = (pageNumber - 1) * limitNumber;
 
-      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      if (!Array.isArray(hashIds) || hashIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "voterIds must be a non-empty array." });
+          .send({ error: "hashIds must be a non-empty array." });
       }
       // Check that barangayCodes is provided and is a non-empty array.
       if (!Array.isArray(barangayCodes) || barangayCodes.length === 0) {
@@ -466,9 +466,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const params: any[] = [];
 
       // 1. Exclude voters whose id is in the provided list.
-      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id NOT IN (${voterIdPlaceholders})`);
-      params.push(...voterIds);
+      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
+      conditions.push(`v.hash_id NOT IN (${hashIdPlaceholders})`);
+      params.push(...hashIds);
 
       // 2. Only consider expected participants.
       conditions.push(`v.group_id != 0`);
@@ -562,20 +562,20 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      voterIds: string[];
+      hashIds: string[];
       barangayCodes: string[];
     };
   }>(
     "/voters/event-reports",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { voterIds, barangayCodes } = req.body;
+      const { hashIds, barangayCodes } = req.body;
 
       // Validate inputs.
-      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      if (!Array.isArray(hashIds) || hashIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "voterIds must be a non-empty array." });
+          .send({ error: "hashIds must be a non-empty array." });
       }
       if (!Array.isArray(barangayCodes) || barangayCodes.length === 0) {
         return reply
@@ -602,13 +602,13 @@ export async function voterRoutes(fastify: FastifyInstance) {
       `;
 
       // --- Actual Participants Query ---
-      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
       const actualConditions = [
-        `v.id IN (${voterIdPlaceholders})`,
+        `v.hash_id IN (${hashIdPlaceholders})`,
         `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
         ...commonConditions,
       ];
-      const actualParams = [...voterIds, ...barangayCodes, ...commonParams];
+      const actualParams = [...hashIds, ...barangayCodes, ...commonParams];
       const actualQuery = `
         SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS actual
         FROM voters v
@@ -683,7 +683,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      voterIds: string[];
+      hashIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
@@ -692,23 +692,23 @@ export async function voterRoutes(fastify: FastifyInstance) {
     "/voters/download-participants",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
+      const { hashIds, barangayCodes, participantType, imgIsNull } = req.body;
 
-      // Validate that voterIds is provided and non-empty
-      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      // Validate that hashIds is provided and non-empty
+      if (!Array.isArray(hashIds) || hashIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "voterIds must be a non-empty array." });
+          .send({ error: "hashIds must be a non-empty array." });
       }
 
       // Build dynamic WHERE conditions and parameters
       const conditions: string[] = [];
       const params: any[] = [];
 
-      // 1. Filter by voterIds
-      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id IN (${voterIdPlaceholders})`);
-      params.push(...voterIds);
+      // 1. Filter by hashIds
+      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
+      conditions.push(`v.hash_id IN (${hashIdPlaceholders})`);
+      params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
       conditions.push(`v.group_id != 0`);
@@ -794,7 +794,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      voterIds: string[];
+      hashIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
@@ -803,23 +803,23 @@ export async function voterRoutes(fastify: FastifyInstance) {
     "/voters/download-absentees",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
+      const { hashIds, barangayCodes, participantType, imgIsNull } = req.body;
 
-      // Validate that voterIds is provided and non-empty.
-      if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      // Validate that hashIds is provided and non-empty.
+      if (!Array.isArray(hashIds) || hashIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "voterIds must be a non-empty array." });
+          .send({ error: "hashIds must be a non-empty array." });
       }
 
       // Build dynamic WHERE conditions and parameter array.
       const conditions: string[] = [];
       const params: any[] = [];
 
-      // 1. For absentees, exclude voters in the provided voterIds.
-      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
-      conditions.push(`v.id NOT IN (${voterIdPlaceholders})`);
-      params.push(...voterIds);
+      // 1. For absentees, exclude voters in the provided hashIds.
+      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
+      conditions.push(`v.hash_id NOT IN (${hashIdPlaceholders})`);
+      params.push(...hashIds);
 
       // 2. Ensure only expected participants (group_id != 0).
       conditions.push(`v.group_id != 0`);
