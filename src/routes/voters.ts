@@ -204,7 +204,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       // If participantType is not provided, no extra is_grpleader filter is applied.
 
       // 4. Only query voters with type 0 or 1
-      conditions.push(`v.type IN (0, 1)`);
+      conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional search filter on fullname
       if (search && search.trim() !== "") {
@@ -243,7 +243,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Query to fetch paginated voter data.
         // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
-          SELECT v.id, v.hash_id, v.img, v.fullname, 
+          SELECT v.id, v.hash_id, v.img, v.fullname, v.type,
                  vb.code AS barangayCode, vb.name AS barangay, 
                  vc.name AS citymun, vd.name AS district,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
@@ -340,7 +340,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       // If participantType is not provided, no extra is_grpleader filter is applied.
 
       // 4. Only query voters with type 0 or 1
-      conditions.push(`v.type IN (0, 1)`);
+      conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional search filter on fullname
       if (search && search.trim() !== "") {
@@ -379,7 +379,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Query to fetch paginated voter data.
         // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
-          SELECT v.id, v.hash_id, v.img, v.fullname, 
+          SELECT v.id, v.hash_id, v.img, v.fullname, v.type,
                  vb.code AS barangayCode, vb.name AS barangay, 
                  vc.name AS citymun, vd.name AS district,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
@@ -481,7 +481,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // 4. Only query voters with type 0 or 1.
-      conditions.push(`v.type IN (0, 1)`);
+      conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional search filter on fullname.
       if (search && search.trim() !== "") {
@@ -518,7 +518,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Query to fetch paginated absentee data.
         // Added computed "vgl" field.
         const dataQuery = `
-          SELECT v.id, v.hash_id, v.img, v.fullname, 
+          SELECT v.id, v.hash_id, v.img, v.fullname, v.type,
                  vb.code AS barangayCode, vb.name AS barangay, 
                  vc.name AS citymun, vd.name AS district,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
@@ -584,7 +584,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // Define common conditions: Only expected participants.
-      const commonConditions = ["v.group_id != 0", "v.type IN (0, 1)"];
+      const commonConditions = ["v.group_id != 0", "v.type IN (0, 1, 2)"];
       const commonParams: any[] = [];
 
       // --- Expected Participants Query ---
@@ -721,7 +721,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // 4. Only query voters with type 0 or 1
-      conditions.push(`v.type IN (0, 1)`);
+      conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional filter for img being NULL
       if (imgIsNull) {
@@ -742,7 +742,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       try {
         // Query that selects only fullname and computed vgl
         const csvQuery = `
-          SELECT v.fullname,
+          SELECT v.fullname, v.type,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
@@ -766,12 +766,15 @@ export async function voterRoutes(fastify: FastifyInstance) {
         };
 
         // Build CSV content with a header row
-        const header = "fullname,vgl";
+        const header = "fullname,vgl,type";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
-          csvRows.push(`${fullname},${vgl}`);
+          const type = escapeCSV(
+            String(row.type === 0 ? "B" : row.type === 1 ? "A" : "C")
+          );
+          csvRows.push(`${fullname},${vgl},${type}`);
         }
         const csvData = csvRows.join("\n");
 
@@ -832,7 +835,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // 4. Only query voters with type 0 or 1.
-      conditions.push(`v.type IN (0, 1)`);
+      conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional filter for img being NULL.
       if (imgIsNull) {
@@ -852,7 +855,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       try {
         // Query to select only fullname and computed vgl.
         const csvQuery = `
-          SELECT v.fullname,
+          SELECT v.fullname, v.type,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
@@ -876,12 +879,15 @@ export async function voterRoutes(fastify: FastifyInstance) {
         };
 
         // Build CSV content with a header row.
-        const header = "fullname,vgl";
+        const header = "fullname,vgl,type";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
-          csvRows.push(`${fullname},${vgl}`);
+          const type = escapeCSV(
+            String(row.type === 0 ? "B" : row.type === 1 ? "A" : "C")
+          );
+          csvRows.push(`${fullname},${vgl},${type}`);
         }
         const csvData = csvRows.join("\n");
 
