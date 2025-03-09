@@ -5,24 +5,41 @@ import { authenticateUser } from "../firebase-auth";
 
 export async function voterRoutes(fastify: FastifyInstance) {
   fastify.get<{
-    Querystring: { brgy_code: string; page?: number; limit?: number };
+    Querystring: {
+      barangayCodes?: string | string[];
+      page?: number;
+      limit?: number;
+    };
   }>("/voters", { preHandler: authenticateUser }, async (req, reply) => {
-    const { brgy_code, page = 1, limit = 100 } = req.query;
-    const pageNumber = Number(page);
-    const limitNumber = Number(limit);
+    // Normalize barangayCodes to an array.
+    let codes = req.query.barangayCodes;
+    if (!codes) {
+      reply.status(400).send({ error: "Missing barangayCodes parameter" });
+      return;
+    }
+    const barangayCodes = Array.isArray(codes) ? codes : [codes];
+
+    const pageNumber = Number(req.query.page || 1);
+    const limitNumber = Number(req.query.limit || 100);
     const offset = (pageNumber - 1) * limitNumber;
 
+    // Create dynamic placeholders for the IN clause.
+    const placeholders = barangayCodes.map(() => "?").join(",");
+
     try {
+      // Count total matching voters.
       const [totalCountResult] = await fastify.mysql.query<
         ({ total: number } & RowDataPacket)[]
-      >("SELECT COUNT(*) AS total FROM voters WHERE brgy_code = ?", [
-        brgy_code,
-      ]);
+      >(
+        `SELECT COUNT(*) AS total FROM voters WHERE brgy_code IN (${placeholders})`,
+        barangayCodes
+      );
       const totalCount = totalCountResult[0].total;
 
+      // Retrieve voter rows with pagination.
       const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
-        "SELECT * FROM voters WHERE brgy_code = ? LIMIT ? OFFSET ?",
-        [brgy_code, limitNumber, offset]
+        `SELECT * FROM voters WHERE brgy_code IN (${placeholders}) LIMIT ? OFFSET ?`,
+        [...barangayCodes, limitNumber, offset]
       );
 
       const totalPages = Math.ceil(totalCount / limitNumber);
