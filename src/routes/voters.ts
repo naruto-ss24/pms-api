@@ -579,20 +579,20 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      hashIds: string[];
+      voterIds: string[];
       barangayCodes: string[];
     };
   }>(
     "/voters/event-reports",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { hashIds, barangayCodes } = req.body;
+      const { voterIds, barangayCodes } = req.body;
 
       // Validate inputs.
-      if (!Array.isArray(hashIds) || hashIds.length === 0) {
+      if (!Array.isArray(voterIds) || voterIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "hashIds must be a non-empty array." });
+          .send({ error: "voterIds must be a non-empty array." });
       }
       if (!Array.isArray(barangayCodes) || barangayCodes.length === 0) {
         return reply
@@ -619,13 +619,13 @@ export async function voterRoutes(fastify: FastifyInstance) {
       `;
 
       // --- Actual Participants Query ---
-      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
       const actualConditions = [
-        `v.hash_id IN (${hashIdPlaceholders})`,
+        `v.id IN (${voterIdPlaceholders})`,
         `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
         ...commonConditions,
       ];
-      const actualParams = [...hashIds, ...barangayCodes, ...commonParams];
+      const actualParams = [...voterIds, ...barangayCodes, ...commonParams];
       const actualQuery = `
         SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS actual
         FROM voters v
@@ -700,7 +700,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      hashIds: string[];
+      voterIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
@@ -709,23 +709,23 @@ export async function voterRoutes(fastify: FastifyInstance) {
     "/voters/download-participants",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { hashIds, barangayCodes, participantType, imgIsNull } = req.body;
+      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
 
-      // Validate that hashIds is provided and non-empty
-      if (!Array.isArray(hashIds) || hashIds.length === 0) {
+      // Validate that voterIds is provided and non-empty
+      if (!Array.isArray(voterIds) || voterIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "hashIds must be a non-empty array." });
+          .send({ error: "voterIds must be a non-empty array." });
       }
 
       // Build dynamic WHERE conditions and parameters
       const conditions: string[] = [];
       const params: any[] = [];
 
-      // 1. Filter by hashIds
-      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
-      conditions.push(`v.hash_id IN (${hashIdPlaceholders})`);
-      params.push(...hashIds);
+      // 1. Filter by voterIds
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id IN (${voterIdPlaceholders})`);
+      params.push(...voterIds);
 
       // 2. Ensure only event participants (group_id != 0)
       conditions.push(`v.group_id != 0`);
@@ -783,7 +783,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         };
 
         // Build CSV content with a header row
-        const header = "fullname,vgl,type";
+        const header = "Full Name,VGL,Type";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
@@ -814,7 +814,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      hashIds: string[];
+      voterIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
@@ -823,23 +823,23 @@ export async function voterRoutes(fastify: FastifyInstance) {
     "/voters/download-absentees",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { hashIds, barangayCodes, participantType, imgIsNull } = req.body;
+      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
 
-      // Validate that hashIds is provided and non-empty.
-      if (!Array.isArray(hashIds) || hashIds.length === 0) {
+      // Validate that voterIds is provided and non-empty.
+      if (!Array.isArray(voterIds) || voterIds.length === 0) {
         return reply
           .status(400)
-          .send({ error: "hashIds must be a non-empty array." });
+          .send({ error: "voterIds must be a non-empty array." });
       }
 
       // Build dynamic WHERE conditions and parameter array.
       const conditions: string[] = [];
       const params: any[] = [];
 
-      // 1. For absentees, exclude voters in the provided hashIds.
-      const hashIdPlaceholders = hashIds.map(() => "?").join(",");
-      conditions.push(`v.hash_id NOT IN (${hashIdPlaceholders})`);
-      params.push(...hashIds);
+      // 1. For absentees, exclude voters in the provided voterIds.
+      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
+      conditions.push(`v.id NOT IN (${voterIdPlaceholders})`);
+      params.push(...voterIds);
 
       // 2. Ensure only expected participants (group_id != 0).
       conditions.push(`v.group_id != 0`);
@@ -896,7 +896,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         };
 
         // Build CSV content with a header row.
-        const header = "fullname,vgl,type";
+        const header = "Full Name,VGL,Type";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
