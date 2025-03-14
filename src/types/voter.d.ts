@@ -2,7 +2,9 @@ export type Voter = {
   id: number; // bigint(20) unsigned
   pims22_id?: number | null; // int(11), nullable
   comelec_id?: string | null; // varchar(65), nullable
+  cluster?: number | null; // int(11), nullable
   precinct?: string | null; // varchar(10), nullable
+  seq_no?: number | null; // int(11), nullable
   voter_no: number; // int(10) unsigned, not nullable
   fullname: string; // varchar(105), not nullable
   address?: string | null; // text, nullable
@@ -15,7 +17,6 @@ export type Voter = {
   city_code?: string | null; // varchar(45), nullable
   brgy_code?: string | null; // varchar(45), nullable
   purok_code?: string | null; // varchar(105), nullable
-  cluster?: number | null; // int(11), nullable
   colorcode?: string | null; // varchar(45), nullable
   sector?: string | null; // varchar(250), nullable
   status: number; // int(10) unsigned, not nullable

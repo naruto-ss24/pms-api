@@ -91,6 +91,75 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.get<{ Params: { id: number } }>(
+    "/voters/:id/info",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { id } = req.params;
+
+      try {
+        const query = `
+          SELECT 
+            v.id,
+            v.fullname,
+            v.type,
+            v.cluster,
+            v.precinct,
+            v.address,
+            v.contactnumber,
+            v.bdate,
+            v.sex,
+            v.district_code,
+            v.city_code,
+            v.brgy_code,
+            v.is_houseleader,
+            v.is_grpleader,
+            v.group_id,
+            v.family_id,
+            v.img,
+            v.location,
+            v.images,
+            b.name AS barangay,
+            vc.name AS citymun,
+            vd.name AS district,
+            CASE 
+              WHEN v.family_id = 0 THEN 'N/A' 
+              ELSE h.fullname 
+            END AS hhl,
+            CASE 
+              WHEN v.group_id = 0 THEN 'N/A' 
+              ELSE g.fullname 
+            END AS vgl
+          FROM voters v
+          LEFT JOIN voter_barangay b ON v.brgy_code = b.code
+          LEFT JOIN voter_city vc ON v.city_code = vc.code
+          LEFT JOIN voter_district vd ON v.district_code = vd.code
+          LEFT JOIN voters h ON v.family_id = h.family_id AND h.is_houseleader = 1
+          LEFT JOIN voters g ON v.group_id = g.group_id AND g.is_grpleader = 1
+          WHERE v.id = ?
+          LIMIT 1
+        `;
+        const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
+          query,
+          [id]
+        );
+
+        if (rows.length === 0) {
+          return reply.status(404).send({ error: "Voter not found" });
+        }
+
+        return reply.send({ data: rows[0] });
+      } catch (error: any) {
+        fastify.log.error(
+          "Error fetching voter info:",
+          error.message,
+          error.sql
+        );
+        return reply.status(500).send({ error: "Failed to fetch voter info." });
+      }
+    }
+  );
+
   fastify.post<{ Body: { voters: Partial<Voter>[] } }>(
     "/voters/upload-chunk",
     { preHandler: authenticateUser },
@@ -737,7 +806,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.push(`v.is_grpleader = 0`);
       }
 
-      // 4. Only query voters with type 0 or 1
+      // 4. Only query voters with type 0, 1, or 2
       conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional filter for img being NULL
@@ -757,9 +826,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
-        // Query that selects only fullname and computed vgl
+        // Updated query to include voter.img and voter.id
         const csvQuery = `
-          SELECT v.fullname, v.type,
+          SELECT v.fullname, v.type, v.img, v.id,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
@@ -767,7 +836,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
           ORDER BY v.fullname
         `;
 
-        // Destructure the query result to get the rows array
+        // Execute the query
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
         // Helper function to escape CSV values
@@ -782,22 +851,34 @@ export async function voterRoutes(fastify: FastifyInstance) {
           return value;
         };
 
-        // Build CSV content with a header row
-        const header = "Full Name,VGL,Type";
+        // Build CSV content with header row including new columns.
+        const header = "Full Name,VGL,Type,Has Picture,Link";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
-          const type = escapeCSV(
-            String(row.type === 0 ? "B" : row.type === 1 ? "A" : "C")
+          // Map voter.type values to string: 0 => "B", 1 => "A", 2 => "C"
+          const type =
+            row.type === 0
+              ? "B"
+              : row.type === 1
+              ? "A"
+              : row.type === 2
+              ? "C"
+              : "";
+          const hasPicture = row.img ? "true" : "false";
+          // Build the link column using the FRONTEND_URL environment variable.
+          const link = `${process.env.FRONTEND_URL}/voters/${row.id}`;
+          csvRows.push(
+            `${fullname},${vgl},${escapeCSV(type)},${hasPicture},${escapeCSV(
+              link
+            )}`
           );
-          csvRows.push(`${fullname},${vgl},${type}`);
         }
         const csvData = csvRows.join("\n");
 
         // Set headers to trigger file download
         reply.header("Content-Type", "text/csv");
-        // Filename here is a default; your client can set a dynamic filename if needed.
         reply.header(
           "Content-Disposition",
           "attachment; filename=participants.csv"
@@ -851,7 +932,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.push(`v.is_grpleader = 0`);
       }
 
-      // 4. Only query voters with type 0 or 1.
+      // 4. Only query voters with type 0, 1, or 2.
       conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional filter for img being NULL.
@@ -870,9 +951,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
-        // Query to select only fullname and computed vgl.
+        // Updated query to include voter.img and voter.id.
         const csvQuery = `
-          SELECT v.fullname, v.type,
+          SELECT v.fullname, v.type, v.img, v.id,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
@@ -880,11 +961,11 @@ export async function voterRoutes(fastify: FastifyInstance) {
           ORDER BY v.fullname
         `;
 
-        // Destructure the query result to obtain the rows.
+        // Execute the query
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
         // Helper function to escape CSV values.
-        const escapeCSV = (value: string) => {
+        const escapeCSV = (value: string): string => {
           if (
             value.includes(",") ||
             value.includes('"') ||
@@ -895,16 +976,29 @@ export async function voterRoutes(fastify: FastifyInstance) {
           return value;
         };
 
-        // Build CSV content with a header row.
-        const header = "Full Name,VGL,Type";
+        // Build CSV content with a header row including new columns.
+        const header = "Full Name,VGL,Type,Has Picture,Link";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
-          const type = escapeCSV(
-            String(row.type === 0 ? "B" : row.type === 1 ? "A" : "C")
+          // Map voter.type values to string: 0 => "B", 1 => "A", 2 => "C"
+          const type =
+            row.type === 0
+              ? "B"
+              : row.type === 1
+              ? "A"
+              : row.type === 2
+              ? "C"
+              : "";
+          const hasPicture = row.img ? "true" : "false";
+          // Build the link column using the FRONTEND_URL environment variable.
+          const link = `${process.env.FRONTEND_URL}/voters/${row.id}`;
+          csvRows.push(
+            `${fullname},${vgl},${escapeCSV(type)},${hasPicture},${escapeCSV(
+              link
+            )}`
           );
-          csvRows.push(`${fullname},${vgl},${type}`);
         }
         const csvData = csvRows.join("\n");
 
