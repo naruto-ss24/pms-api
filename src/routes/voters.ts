@@ -670,13 +670,13 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // Define common conditions: Only expected participants.
-      const commonConditions = ["v.group_id != 0", "v.type IN (0, 1, 2)"];
+      // const commonConditions = ["v.group_id != 0", "v.type IN (0, 1, 2)"];
       const commonParams: any[] = [];
 
       // --- Expected Participants Query ---
       const expectedConditions = [
         `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
-        ...commonConditions,
+        // ...commonConditions,
       ];
       const expectedParams = [...barangayCodes, ...commonParams];
       const expectedQuery = `
@@ -692,7 +692,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const actualConditions = [
         `v.id IN (${voterIdPlaceholders})`,
         `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
-        ...commonConditions,
+        // ...commonConditions,
       ];
       const actualParams = [...voterIds, ...barangayCodes, ...commonParams];
       const actualQuery = `
