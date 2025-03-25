@@ -160,6 +160,54 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.get<{ Params: { groupId: number } }>(
+    "/voters/:groupId/group-info",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { groupId } = req.params;
+
+      try {
+        const query = `
+          SELECT 
+            v.id,
+            v.fullname,
+            vb.name AS barangay,
+            vc.name AS citymun,
+            v.purok_code,
+            v.precinct,
+            v.cluster,
+            v.address,
+            v.contactnumber,
+            v.group_id,
+            v.is_grpleader
+          FROM voters v
+          LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+          LEFT JOIN voter_city vc ON v.city_code = vc.code
+          WHERE v.group_id = ?
+          ORDER BY v.fullname
+        `;
+
+        const [rows] = await fastify.mysql.query<(Voter & RowDataPacket)[]>(
+          query,
+          [groupId]
+        );
+
+        if (rows.length === 0) {
+          return reply
+            .status(404)
+            .send({ error: "No voters found for this group." });
+        }
+
+        return reply.send({ data: rows });
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch voter group." });
+      }
+    }
+  );
+
   fastify.post<{ Body: { voters: Partial<Voter>[] } }>(
     "/voters/upload-chunk",
     { preHandler: authenticateUser },
@@ -329,10 +377,11 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Query to fetch paginated voter data.
         // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
-          SELECT v.id, v.hash_id, v.img, v.fullname, v.type,
-                 vb.code AS barangayCode, vb.name AS barangay, 
-                 vc.name AS citymun, vd.name AS district,
-                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+          SELECT v.id, v.hash_id, v.img, v.type,
+                v.fullname, v.group_id, v.family_id, v.is_grpleader, v.is_houseleader,
+                vb.code AS barangayCode, vb.name AS barangay, 
+                vc.name AS citymun, vd.name AS district,
+                CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
           LEFT JOIN voter_city vc ON v.city_code = vc.code
