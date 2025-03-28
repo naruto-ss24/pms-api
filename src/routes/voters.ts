@@ -695,6 +695,57 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.get<{
+    Params: { barangayCode: string };
+  }>(
+    "/voters/expected-participants/:barangayCode",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { barangayCode } = req.params;
+
+      // Query to count expected participants for the given barangay.
+      const query = `
+        SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
+        FROM voters v
+        LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+        WHERE v.brgy_code = ? 
+          AND v.group_id != 0 
+          AND v.type IN (0, 1, 2)
+        GROUP BY v.brgy_code, vb.name
+      `;
+      try {
+        const [results] = await fastify.mysql.query<
+          (RowDataPacket & {
+            brgy_code: string;
+            barangay: string;
+            expected: number;
+          })[]
+        >(query, [barangayCode]);
+
+        if (results.length === 0) {
+          // No matching voters found; try to get barangay name from voter_barangay table.
+          const [barResults] = await fastify.mysql.query<
+            (RowDataPacket & { name: string })[]
+          >(`SELECT name FROM voter_barangay WHERE code = ?`, [barangayCode]);
+          const barangayName =
+            barResults.length > 0 ? barResults[0].name : barangayCode;
+          return reply.send({
+            barangayCode,
+            barangay: barangayName,
+            expected: 0,
+          });
+        }
+
+        return reply.send(results[0]);
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch expected participants" });
+      }
+    }
+  );
+
   fastify.post<{
     Body: {
       voterIds: string[];
