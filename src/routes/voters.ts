@@ -162,7 +162,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.get<{ Params: { groupId: number } }>(
     "/voters/:groupId/group-info",
-    { preHandler: authenticateUser },
+    // { preHandler: authenticateUser },
     async (req, reply) => {
       const { groupId } = req.params;
 
