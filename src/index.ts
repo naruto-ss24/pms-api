@@ -15,6 +15,7 @@ import { barangayRoutes } from "./routes/barangays";
 import { voterRoutes } from "./routes/voters";
 import { authenticateUser } from "./firebase-auth";
 import { tagRoutes } from "./routes/tags";
+import { clusteredPrecinctRoutes } from "./routes/clustered-precincts";
 
 dotenv.config();
 
@@ -100,6 +101,7 @@ fastify.register(citymunRoutes);
 fastify.register(barangayRoutes);
 fastify.register(voterRoutes);
 fastify.register(tagRoutes);
+fastify.register(clusteredPrecinctRoutes);
 
 // Start the server
 const start = async () => {

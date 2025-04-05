@@ -162,7 +162,6 @@ export async function voterRoutes(fastify: FastifyInstance) {
 
   fastify.get<{ Params: { groupId: number } }>(
     "/voters/:groupId/group-info",
-    // { preHandler: authenticateUser },
     async (req, reply) => {
       const { groupId } = req.params;
 
@@ -378,7 +377,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
           SELECT v.id, v.hash_id, v.img, v.type,
-                v.fullname, v.group_id, v.family_id, v.is_grpleader, v.is_houseleader,
+                v.fullname, v.group_id, v.family_id, v.is_grpleader, v.is_houseleader, v.cluster, v.precinct,
                 vb.code AS barangayCode, vb.name AS barangay, 
                 vc.name AS citymun, vd.name AS district,
                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
@@ -560,7 +559,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
   fastify.post<{
     Body: {
       hashIds: string[];
-      barangayCodes: string[]; // now mandatory
+      barangayCodes: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
       page?: number;
@@ -696,23 +695,34 @@ export async function voterRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get<{
-    Params: { barangayCode: string };
+    Querystring: {
+      barangayCode: string;
+      participantType?: "leaders" | "members";
+    };
   }>(
-    "/voters/expected-participants/:barangayCode",
+    "/voters/expected-participants",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { barangayCode } = req.params;
+      const { barangayCode, participantType } = req.query;
 
-      // Query to count expected participants for the given barangay.
-      const query = `
+      let query = `
         SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
         FROM voters v
         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
         WHERE v.brgy_code = ? 
           AND v.group_id != 0 
           AND v.type IN (0, 1, 2)
-        GROUP BY v.brgy_code, vb.name
       `;
+
+      // Apply participantType filter logic.
+      if (participantType === "leaders") {
+        query += ` AND v.is_grpleader = 1`;
+      } else if (participantType === "members") {
+        query += ` AND v.is_grpleader = 0`;
+      }
+
+      query += ` GROUP BY v.brgy_code, vb.name`;
+
       try {
         const [results] = await fastify.mysql.query<
           (RowDataPacket & {
@@ -742,127 +752,6 @@ export async function voterRoutes(fastify: FastifyInstance) {
         return reply
           .status(500)
           .send({ error: "Failed to fetch expected participants" });
-      }
-    }
-  );
-
-  fastify.post<{
-    Body: {
-      voterIds: string[];
-      barangayCodes: string[];
-    };
-  }>(
-    "/voters/event-reports",
-    { preHandler: authenticateUser },
-    async (req, reply) => {
-      const { voterIds, barangayCodes } = req.body;
-
-      // Validate inputs.
-      if (!Array.isArray(voterIds) || voterIds.length === 0) {
-        return reply
-          .status(400)
-          .send({ error: "voterIds must be a non-empty array." });
-      }
-      if (!Array.isArray(barangayCodes) || barangayCodes.length === 0) {
-        return reply
-          .status(400)
-          .send({ error: "barangayCodes must be a non-empty array." });
-      }
-
-      // Define common conditions: Only expected participants.
-      const commonConditions = ["v.group_id != 0", "v.type IN (0, 1, 2)"];
-      const commonParams: any[] = [];
-
-      // --- Expected Participants Query ---
-      const expectedConditions = [
-        `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
-        ...commonConditions,
-      ];
-      const expectedParams = [...barangayCodes, ...commonParams];
-      const expectedQuery = `
-        SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
-        FROM voters v
-        LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
-        WHERE ${expectedConditions.join(" AND ")}
-        GROUP BY v.brgy_code, vb.name
-      `;
-
-      // --- Actual Participants Query ---
-      const voterIdPlaceholders = voterIds.map(() => "?").join(",");
-      const actualConditions = [
-        `v.id IN (${voterIdPlaceholders})`,
-        `v.brgy_code IN (${barangayCodes.map(() => "?").join(",")})`,
-        // ...commonConditions,
-      ];
-      const actualParams = [...voterIds, ...barangayCodes, ...commonParams];
-      const actualQuery = `
-        SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS actual
-        FROM voters v
-        LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
-        WHERE ${actualConditions.join(" AND ")}
-        GROUP BY v.brgy_code, vb.name
-      `;
-
-      try {
-        // Run expected count query.
-        const [expectedResults] = await fastify.mysql.query<
-          ({
-            brgy_code: string;
-            barangay: string;
-            expected: number;
-          } & RowDataPacket)[]
-        >(expectedQuery, expectedParams);
-
-        // Run actual count query.
-        const [actualResults] = await fastify.mysql.query<
-          ({
-            brgy_code: string;
-            barangay: string;
-            actual: number;
-          } & RowDataPacket)[]
-        >(actualQuery, actualParams);
-
-        // Build maps keyed by barangay code.
-        const expectedMap: Record<
-          string,
-          { expected: number; barangay: string }
-        > = {};
-        expectedResults.forEach((row) => {
-          expectedMap[row.brgy_code] = {
-            expected: row.expected,
-            barangay: row.barangay || row.brgy_code,
-          };
-        });
-        const actualMap: Record<string, { actual: number; barangay: string }> =
-          {};
-        actualResults.forEach((row) => {
-          actualMap[row.brgy_code] = {
-            actual: row.actual,
-            barangay: row.barangay || row.brgy_code,
-          };
-        });
-
-        // Build the report array.
-        const report = barangayCodes.map((code) => {
-          const expObj = expectedMap[code] || { expected: 0, barangay: code };
-          const actObj = actualMap[code] || { actual: 0, barangay: code };
-          const expected = expObj.expected;
-          const actual = actObj.actual;
-          const absentees = expected > actual ? expected - actual : 0;
-          // Return the desired shape.
-          return {
-            barangayCode: code,
-            barangay: expObj.barangay || actObj.barangay || code,
-            expected,
-            actual,
-            absentees,
-          };
-        });
-
-        return reply.send({ report });
-      } catch (err) {
-        fastify.log.error(err);
-        return reply.status(500).send({ error: "Failed to generate report" });
       }
     }
   );
