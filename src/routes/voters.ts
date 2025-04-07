@@ -207,6 +207,144 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.get<{
+    Querystring: {
+      barangayCode: string;
+      participantType?: "leaders" | "members";
+    };
+  }>(
+    "/voters/expected-participants",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { barangayCode, participantType } = req.query;
+
+      // Build the query for expected participants (those with group_id != 0).
+      let expectedQuery = `
+        SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
+        FROM voters v
+        LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+        WHERE v.brgy_code = ? 
+          AND v.group_id != 0 
+          AND v.type IN (0, 1, 2)
+      `;
+
+      // Apply participantType filter logic if provided.
+      if (participantType === "leaders") {
+        expectedQuery += ` AND v.is_grpleader = 1`;
+      } else if (participantType === "members") {
+        expectedQuery += ` AND v.is_grpleader = 0`;
+      }
+
+      expectedQuery += ` GROUP BY v.brgy_code, vb.name`;
+
+      try {
+        // Query expected participants.
+        const [results] = await fastify.mysql.query<
+          (RowDataPacket & {
+            brgy_code: string;
+            barangay: string;
+            expected: number;
+          })[]
+        >(expectedQuery, [barangayCode]);
+
+        // Query the total number of eligible voters (regardless of group participation).
+        const totalVotersQuery = `
+          SELECT COUNT(*) AS totalVoters
+          FROM voters
+          WHERE brgy_code = ?
+        `;
+        const [totalResults] = await fastify.mysql.query<
+          (RowDataPacket & { totalVoters: number })[]
+        >(totalVotersQuery, [barangayCode]);
+        const totalVoters = totalResults[0]?.totalVoters || 0;
+
+        // If no expected participants found, get the barangay name and return 0 for expected.
+        if (results.length === 0) {
+          const [barResults] = await fastify.mysql.query<
+            (RowDataPacket & { name: string })[]
+          >(`SELECT name FROM voter_barangay WHERE code = ?`, [barangayCode]);
+          const barangayName =
+            barResults.length > 0 ? barResults[0].name : barangayCode;
+          return reply.send({
+            barangayCode,
+            barangay: barangayName,
+            expected: 0,
+            totalVoters,
+          });
+        }
+
+        // Otherwise, return the expected participants along with total voters.
+        return reply.send({
+          ...results[0],
+          totalVoters,
+        });
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch expected participants" });
+      }
+    }
+  );
+
+  fastify.get<{
+    Params: { barangayCode: string };
+    Querystring: { cluster?: string; precinct?: string };
+  }>(
+    "/voters/:barangayCode/group-leaders",
+    { preHandler: authenticateUser },
+    async (req, reply) => {
+      const { barangayCode } = req.params;
+      const { cluster, precinct } = req.query;
+
+      // Initialize the query parameters array with barangayCode
+      const params: (string | number)[] = [barangayCode];
+      let additionalWhere = "";
+
+      if (cluster) {
+        additionalWhere += " AND v.cluster = ?";
+        // Convert cluster to a number if necessary
+        params.push(Number(cluster));
+      }
+      if (precinct) {
+        additionalWhere += " AND v.precinct = ?";
+        params.push(precinct);
+      }
+
+      try {
+        const query = `
+          SELECT 
+            v.id,
+            v.fullname AS fullName,
+            v.group_id AS groupId,
+            (SELECT COUNT(*) FROM voters AS v2 WHERE v2.group_id = v.group_id) AS members
+          FROM voters v
+          WHERE v.brgy_code = ?
+            AND v.is_grpleader = 1
+            ${additionalWhere}
+          ORDER BY v.fullname
+        `;
+
+        const [rows] = await fastify.mysql.query<
+          (RowDataPacket & { id: number; fullname: string; members: number })[]
+        >(query, params);
+
+        if (rows.length === 0) {
+          return reply
+            .status(404)
+            .send({ error: "No group leaders found for this barangay." });
+        }
+
+        return reply.send(rows);
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch group leaders." });
+      }
+    }
+  );
+
   fastify.post<{ Body: { voters: Partial<Voter>[] } }>(
     "/voters/upload-chunk",
     { preHandler: authenticateUser },
@@ -690,86 +828,6 @@ export async function voterRoutes(fastify: FastifyInstance) {
       } catch (err) {
         fastify.log.error(err);
         return reply.status(500).send({ error: "Failed to fetch absentees" });
-      }
-    }
-  );
-
-  fastify.get<{
-    Querystring: {
-      barangayCode: string;
-      participantType?: "leaders" | "members";
-    };
-  }>(
-    "/voters/expected-participants",
-    { preHandler: authenticateUser },
-    async (req, reply) => {
-      const { barangayCode, participantType } = req.query;
-
-      // Build the query for expected participants (those with group_id != 0).
-      let expectedQuery = `
-        SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
-        FROM voters v
-        LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
-        WHERE v.brgy_code = ? 
-          AND v.group_id != 0 
-          AND v.type IN (0, 1, 2)
-      `;
-
-      // Apply participantType filter logic if provided.
-      if (participantType === "leaders") {
-        expectedQuery += ` AND v.is_grpleader = 1`;
-      } else if (participantType === "members") {
-        expectedQuery += ` AND v.is_grpleader = 0`;
-      }
-
-      expectedQuery += ` GROUP BY v.brgy_code, vb.name`;
-
-      try {
-        // Query expected participants.
-        const [results] = await fastify.mysql.query<
-          (RowDataPacket & {
-            brgy_code: string;
-            barangay: string;
-            expected: number;
-          })[]
-        >(expectedQuery, [barangayCode]);
-
-        // Query the total number of eligible voters (regardless of group participation).
-        const totalVotersQuery = `
-          SELECT COUNT(*) AS totalVoters
-          FROM voters
-          WHERE brgy_code = ?
-        `;
-        const [totalResults] = await fastify.mysql.query<
-          (RowDataPacket & { totalVoters: number })[]
-        >(totalVotersQuery, [barangayCode]);
-        const totalVoters = totalResults[0]?.totalVoters || 0;
-
-        // If no expected participants found, get the barangay name and return 0 for expected.
-        if (results.length === 0) {
-          const [barResults] = await fastify.mysql.query<
-            (RowDataPacket & { name: string })[]
-          >(`SELECT name FROM voter_barangay WHERE code = ?`, [barangayCode]);
-          const barangayName =
-            barResults.length > 0 ? barResults[0].name : barangayCode;
-          return reply.send({
-            barangayCode,
-            barangay: barangayName,
-            expected: 0,
-            totalVoters,
-          });
-        }
-
-        // Otherwise, return the expected participants along with total voters.
-        return reply.send({
-          ...results[0],
-          totalVoters,
-        });
-      } catch (err) {
-        fastify.log.error(err);
-        return reply
-          .status(500)
-          .send({ error: "Failed to fetch expected participants" });
       }
     }
   );
