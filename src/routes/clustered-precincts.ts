@@ -31,7 +31,16 @@ export async function clusteredPrecinctRoutes(fastify: FastifyInstance) {
           [barangayCode]
         );
 
-        // 2. Build and run the query to get expected participants per precinct.
+        // Remove duplicate precinct entries (same cluster and precinct)
+        const uniqueClusteredRows = clusteredRows.filter(
+          (row, index, self) =>
+            index ===
+            self.findIndex(
+              (r) => r.cluster === row.cluster && r.precinct === row.precinct
+            )
+        );
+
+        // 2. Query expected participants per precinct.
         let expectedQuery = `
           SELECT precinct, COUNT(*) as expected
           FROM voters
@@ -50,20 +59,38 @@ export async function clusteredPrecinctRoutes(fastify: FastifyInstance) {
           (RowDataPacket & { precinct: string; expected: number })[]
         >(expectedQuery, [barangayCode]);
 
-        // Create a lookup map from precinct to its expected participants count.
+        // Build a lookup map from precinct to expected participants.
         const expectedMap: Record<string, number> = {};
         expectedRows.forEach((row) => {
           expectedMap[row.precinct] = row.expected;
         });
 
-        // 3. Merge the clustered precincts with the expected counts.
-        const precinctData = clusteredRows.map((row) => ({
+        // 3. Query total voters per precinct.
+        const totalVotersQuery = `
+          SELECT precinct, COUNT(*) as totalVoters
+          FROM voters
+          WHERE brgy_code = ?
+          GROUP BY precinct
+        `;
+        const [totalVotersRows] = await fastify.mysql.query<
+          (RowDataPacket & { precinct: string; totalVoters: number })[]
+        >(totalVotersQuery, [barangayCode]);
+
+        // Build a lookup map from precinct to total voters.
+        const totalVotersMap: Record<string, number> = {};
+        totalVotersRows.forEach((row) => {
+          totalVotersMap[row.precinct] = row.totalVoters;
+        });
+
+        // 4. Merge the clustered precincts with the expected and total voters counts.
+        const precinctData = uniqueClusteredRows.map((row) => ({
           cluster: row.cluster,
           precinct: row.precinct,
           expected: expectedMap[row.precinct] || 0,
+          totalVoters: totalVotersMap[row.precinct] || 0,
         }));
 
-        // 4. Group the precincts by cluster and calculate total expected.
+        // 5. Group precincts by cluster and compute cluster-level totals.
         const grouped = precinctData.reduce((acc, cur) => {
           if (!acc[cur.cluster]) {
             acc[cur.cluster] = [];
@@ -71,19 +98,19 @@ export async function clusteredPrecinctRoutes(fastify: FastifyInstance) {
           acc[cur.cluster].push({
             precinct: cur.precinct,
             expected: cur.expected,
+            totalVoters: cur.totalVoters,
           });
           return acc;
-        }, {} as Record<number, { precinct: string; expected: number }[]>);
+        }, {} as Record<number, { precinct: string; expected: number; totalVoters: number }[]>);
 
-        // Transform the grouped object into an array with totalExpected at the cluster level.
+        // Transform the grouped object into an array with totals.
         const result = Object.entries(grouped).map(([cluster, precincts]) => {
-          const totalExpected = precincts.reduce(
-            (sum, p) => sum + p.expected,
-            0
-          );
+          const totalExpected = precincts.reduce((sum, p) => sum + p.expected, 0);
+          const totalVoters = precincts.reduce((sum, p) => sum + p.totalVoters, 0);
           return {
             cluster: Number(cluster),
             totalExpected,
+            totalVoters,
             precincts,
           };
         });
@@ -93,7 +120,7 @@ export async function clusteredPrecinctRoutes(fastify: FastifyInstance) {
         fastify.log.error(err);
         reply.status(500).send({
           error:
-            "Failed to fetch clustered precincts with expected participants",
+            "Failed to fetch clustered precincts with expected participants and total voters",
         });
       }
     }

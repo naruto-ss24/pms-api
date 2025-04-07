@@ -705,7 +705,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
     async (req, reply) => {
       const { barangayCode, participantType } = req.query;
 
-      let query = `
+      // Build the query for expected participants (those with group_id != 0).
+      let expectedQuery = `
         SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
         FROM voters v
         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
@@ -714,26 +715,38 @@ export async function voterRoutes(fastify: FastifyInstance) {
           AND v.type IN (0, 1, 2)
       `;
 
-      // Apply participantType filter logic.
+      // Apply participantType filter logic if provided.
       if (participantType === "leaders") {
-        query += ` AND v.is_grpleader = 1`;
+        expectedQuery += ` AND v.is_grpleader = 1`;
       } else if (participantType === "members") {
-        query += ` AND v.is_grpleader = 0`;
+        expectedQuery += ` AND v.is_grpleader = 0`;
       }
 
-      query += ` GROUP BY v.brgy_code, vb.name`;
+      expectedQuery += ` GROUP BY v.brgy_code, vb.name`;
 
       try {
+        // Query expected participants.
         const [results] = await fastify.mysql.query<
           (RowDataPacket & {
             brgy_code: string;
             barangay: string;
             expected: number;
           })[]
-        >(query, [barangayCode]);
+        >(expectedQuery, [barangayCode]);
 
+        // Query the total number of eligible voters (regardless of group participation).
+        const totalVotersQuery = `
+          SELECT COUNT(*) AS totalVoters
+          FROM voters
+          WHERE brgy_code = ?
+        `;
+        const [totalResults] = await fastify.mysql.query<
+          (RowDataPacket & { totalVoters: number })[]
+        >(totalVotersQuery, [barangayCode]);
+        const totalVoters = totalResults[0]?.totalVoters || 0;
+
+        // If no expected participants found, get the barangay name and return 0 for expected.
         if (results.length === 0) {
-          // No matching voters found; try to get barangay name from voter_barangay table.
           const [barResults] = await fastify.mysql.query<
             (RowDataPacket & { name: string })[]
           >(`SELECT name FROM voter_barangay WHERE code = ?`, [barangayCode]);
@@ -743,10 +756,15 @@ export async function voterRoutes(fastify: FastifyInstance) {
             barangayCode,
             barangay: barangayName,
             expected: 0,
+            totalVoters,
           });
         }
 
-        return reply.send(results[0]);
+        // Otherwise, return the expected participants along with total voters.
+        return reply.send({
+          ...results[0],
+          totalVoters,
+        });
       } catch (err) {
         fastify.log.error(err);
         return reply
