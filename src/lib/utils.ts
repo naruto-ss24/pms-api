@@ -32,3 +32,10 @@ export const fetchVoterLocations = async (
     };
   });
 };
+
+export const escapeCSV = (value: string): string => {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+};

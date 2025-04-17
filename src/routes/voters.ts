@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { Voter } from "../types/voter";
 import { RowDataPacket } from "@fastify/mysql";
 import { authenticateUser } from "../firebase-auth";
+import { escapeCSV } from "../lib/utils";
 
 export async function voterRoutes(fastify: FastifyInstance) {
   fastify.get<{
@@ -316,6 +317,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
           SELECT 
             v.id,
             v.fullname AS fullName,
+            v.cluster,
             v.group_id AS groupId,
             (SELECT COUNT(*) FROM voters AS v2 WHERE v2.group_id = v.group_id) AS members
           FROM voters v
@@ -893,7 +895,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       try {
         // Updated query to include voter.img and voter.id
         const csvQuery = `
-          SELECT v.fullname, v.type, v.img, v.id,
+          SELECT v.fullname, v.cluster, v.type, v.img, v.id,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
@@ -904,20 +906,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Execute the query
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
-        // Helper function to escape CSV values
-        const escapeCSV = (value: string): string => {
-          if (
-            value.includes(",") ||
-            value.includes('"') ||
-            value.includes("\n")
-          ) {
-            return `"${value.replace(/"/g, '""')}"`;
-          }
-          return value;
-        };
-
         // Build CSV content with header row including new columns.
-        const header = "Full Name,VGL,Type,Has Picture,Link";
+        const header = "Full Name,Cluster,Group Leader,Type,Has Picture,Link";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
@@ -935,9 +925,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
           // Build the link column using the FRONTEND_URL environment variable.
           const link = `${process.env.FRONTEND_URL}/voters/${row.id}`;
           csvRows.push(
-            `${fullname},${vgl},${escapeCSV(type)},${hasPicture},${escapeCSV(
-              link
-            )}`
+            `${fullname},${row.cluster},${vgl},${type},${hasPicture},${link}`
           );
         }
         const csvData = csvRows.join("\n");
@@ -1018,7 +1006,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       try {
         // Updated query to include voter.img and voter.id.
         const csvQuery = `
-          SELECT v.fullname, v.type, v.img, v.id,
+          SELECT v.fullname, v.cluster, v.type, v.img, v.id,
                  CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
@@ -1029,20 +1017,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Execute the query
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
-        // Helper function to escape CSV values.
-        const escapeCSV = (value: string): string => {
-          if (
-            value.includes(",") ||
-            value.includes('"') ||
-            value.includes("\n")
-          ) {
-            return `"${value.replace(/"/g, '""')}"`;
-          }
-          return value;
-        };
-
         // Build CSV content with a header row including new columns.
-        const header = "Full Name,VGL,Type,Has Picture,Link";
+        const header = "Full Name,Cluster,Group Leader,Type,Has Picture,Link";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
@@ -1060,9 +1036,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
           // Build the link column using the FRONTEND_URL environment variable.
           const link = `${process.env.FRONTEND_URL}/voters/${row.id}`;
           csvRows.push(
-            `${fullname},${vgl},${escapeCSV(type)},${hasPicture},${escapeCSV(
-              link
-            )}`
+            `${fullname},${row.cluster},${vgl},${type},${hasPicture},${link}`
           );
         }
         const csvData = csvRows.join("\n");
