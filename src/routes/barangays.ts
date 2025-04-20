@@ -8,35 +8,45 @@ import { GeoJSONFeature, GeoJSONFeatureCollection } from "../types/geojson";
 
 export async function barangayRoutes(fastify: FastifyInstance) {
   fastify.get<{
-    Querystring: { brgy_code: string };
+    Querystring: { brgy_code?: string };
   }>("/barangays", { preHandler: authenticateUser }, async (req, reply) => {
     try {
       const { brgy_code } = req.query;
-      const code = brgy_code ?? "AR1002-MUN100001";
 
+      // Base query
+      let sql = `
+          SELECT 
+            b.name,
+            c.name AS citymun, 
+            d.name AS district,
+            b.code,
+            b.muncode,
+            b.areacode
+          FROM 
+            voter_barangay b
+          JOIN 
+            voter_city c ON b.muncode = c.code
+          JOIN 
+            voter_district d ON b.areacode = d.code
+        `;
+      const params: string[] = [];
+
+      // If brgy_code was provided, add a prefix filter
+      if (brgy_code) {
+        sql += ` WHERE b.code LIKE CONCAT(?, '%')`;
+        params.push(brgy_code);
+      }
+
+      // Execute safely with parameter binding
       const [rows] = await fastify.mysql.query<(Barangay & RowDataPacket)[]>(
-        `
-        SELECT 
-          b.name,
-          c.name AS citymun, 
-          d.name AS district,
-          b.code,
-          b.muncode,
-          b.areacode
-        FROM 
-          voter_barangay b
-        JOIN 
-          voter_city c ON b.muncode = c.code
-        JOIN 
-          voter_district d ON b.areacode = d.code
-        WHERE
-          b.code like "${code}%"
-        `
+        sql,
+        params
       );
-      await reply.send(rows);
+
+      return reply.send(rows);
     } catch (err) {
       fastify.log.error(err);
-      await reply.status(500).send({ error: "Failed to fetch barangays" });
+      return reply.status(500).send({ error: "Failed to fetch barangays" });
     }
   });
 
