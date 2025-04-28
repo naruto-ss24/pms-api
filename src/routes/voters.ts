@@ -834,20 +834,29 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // Download Participants with cluster + precinct filter
   fastify.post<{
     Body: {
       voterIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
+      cluster?: number; // ← new
+      precinct?: string; // ← new
     };
   }>(
     "/voters/download-participants",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
+      const {
+        voterIds,
+        barangayCodes,
+        participantType,
+        imgIsNull,
+        cluster, // ← destructured
+        precinct, // ← destructured
+      } = req.body;
 
-      // Validate that voterIds is provided and non-empty
       if (!Array.isArray(voterIds) || voterIds.length === 0) {
         return reply
           .status(400)
@@ -863,56 +872,72 @@ export async function voterRoutes(fastify: FastifyInstance) {
       conditions.push(`v.id IN (${voterIdPlaceholders})`);
       params.push(...voterIds);
 
-      // 2. Ensure only event participants (group_id != 0)
+      // 2. Ensure only event participants
       conditions.push(`v.group_id != 0`);
 
-      // 3. Filter based on participantType if provided
+      // 3. participantType
       if (participantType === "leaders") {
         conditions.push(`v.is_grpleader = 1`);
       } else if (participantType === "members") {
         conditions.push(`v.is_grpleader = 0`);
       }
 
-      // 4. Only query voters with type 0, 1, or 2
+      // 4. Only types 0,1,2
       conditions.push(`v.type IN (0, 1, 2)`);
 
-      // 5. Optional filter for img being NULL
+      // 5. img IS NULL
       if (imgIsNull) {
         conditions.push(`v.img IS NULL`);
       }
 
-      // 6. Optional filter for barangayCodes if provided
+      // 6. barangayCodes
       if (Array.isArray(barangayCodes) && barangayCodes.length > 0) {
-        const barangayPlaceholders = barangayCodes.map(() => "?").join(",");
-        conditions.push(`v.brgy_code IN (${barangayPlaceholders})`);
+        const bcPH = barangayCodes.map(() => "?").join(",");
+        conditions.push(`v.brgy_code IN (${bcPH})`);
         params.push(...barangayCodes);
       }
 
-      // Combine conditions into a WHERE clause
+      // 7. cluster filter
+      if (typeof cluster === "number") {
+        conditions.push(`v.cluster = ?`);
+        params.push(cluster);
+      }
+
+      // 8. precinct filter
+      if (typeof precinct === "string" && precinct.trim() !== "") {
+        conditions.push(`v.precinct = ?`);
+        params.push(precinct);
+      }
+
       const whereClause =
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
-        // Updated query to include voter.img and voter.id
         const csvQuery = `
-          SELECT v.fullname, v.cluster, v.type, v.img, v.id,
-                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
-          FROM voters v
-          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
-          ${whereClause}
-          ORDER BY v.fullname
-        `;
+        SELECT
+          v.fullname,
+          v.cluster,
+          v.precinct,
+          v.type,
+          v.img,
+          v.id,
+          CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+        FROM voters v
+        LEFT JOIN voters vgl
+          ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+        ${whereClause}
+        ORDER BY v.fullname
+      `;
 
-        // Execute the query
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
-        // Build CSV content with header row including new columns.
-        const header = "Full Name,Cluster,Group Leader,Type,Has Picture,Link";
+        // Build CSV
+        const header =
+          "Full Name,Cluster,Precinct,Group Leader,Type,Has Picture,Link";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
-          // Map voter.type values to string: 0 => "B", 1 => "A", 2 => "C"
           const type =
             row.type === 0
               ? "B"
@@ -922,15 +947,13 @@ export async function voterRoutes(fastify: FastifyInstance) {
               ? "C"
               : "";
           const hasPicture = row.img ? "true" : "false";
-          // Build the link column using the FRONTEND_URL environment variable.
           const link = `${process.env.FRONTEND_URL}/voters/${row.id}`;
           csvRows.push(
-            `${fullname},${row.cluster},${vgl},${type},${hasPicture},${link}`
+            `${fullname},${row.cluster},${row.precinct},${vgl},${type},${hasPicture},${link}`
           );
         }
         const csvData = csvRows.join("\n");
 
-        // Set headers to trigger file download
         reply.header("Content-Type", "text/csv");
         reply.header(
           "Content-Disposition",
@@ -946,84 +969,109 @@ export async function voterRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // Download Absentees with cluster + precinct filter
   fastify.post<{
     Body: {
       voterIds: string[];
       barangayCodes?: string[];
       participantType?: "leaders" | "members";
       imgIsNull?: boolean;
+      cluster?: number; // ← new
+      precinct?: string; // ← new
     };
   }>(
     "/voters/download-absentees",
     { preHandler: authenticateUser },
     async (req, reply) => {
-      const { voterIds, barangayCodes, participantType, imgIsNull } = req.body;
+      const {
+        voterIds,
+        barangayCodes,
+        participantType,
+        imgIsNull,
+        cluster, // ← destructured
+        precinct, // ← destructured
+      } = req.body;
 
-      // Validate that voterIds is provided and non-empty.
       if (!Array.isArray(voterIds) || voterIds.length === 0) {
         return reply
           .status(400)
           .send({ error: "voterIds must be a non-empty array." });
       }
 
-      // Build dynamic WHERE conditions and parameter array.
       const conditions: string[] = [];
       const params: any[] = [];
 
-      // 1. For absentees, exclude voters in the provided voterIds.
+      // 1. Exclude scanned voterIds
       const voterIdPlaceholders = voterIds.map(() => "?").join(",");
       conditions.push(`v.id NOT IN (${voterIdPlaceholders})`);
       params.push(...voterIds);
 
-      // 2. Ensure only expected participants (group_id != 0).
+      // 2. Only event participants
       conditions.push(`v.group_id != 0`);
 
-      // 3. Filter based on participantType if provided.
+      // 3. participantType
       if (participantType === "leaders") {
         conditions.push(`v.is_grpleader = 1`);
       } else if (participantType === "members") {
         conditions.push(`v.is_grpleader = 0`);
       }
 
-      // 4. Only query voters with type 0, 1, or 2.
+      // 4. Only types 0,1,2
       conditions.push(`v.type IN (0, 1, 2)`);
 
-      // 5. Optional filter for img being NULL.
+      // 5. img IS NULL
       if (imgIsNull) {
         conditions.push(`v.img IS NULL`);
       }
 
-      // 6. Optional filter for barangayCodes.
+      // 6. barangayCodes
       if (Array.isArray(barangayCodes) && barangayCodes.length > 0) {
-        const barangayPlaceholders = barangayCodes.map(() => "?").join(",");
-        conditions.push(`v.brgy_code IN (${barangayPlaceholders})`);
+        const bcPH = barangayCodes.map(() => "?").join(",");
+        conditions.push(`v.brgy_code IN (${bcPH})`);
         params.push(...barangayCodes);
+      }
+
+      // 7. cluster filter
+      if (typeof cluster === "number") {
+        conditions.push(`v.cluster = ?`);
+        params.push(cluster);
+      }
+
+      // 8. precinct filter
+      if (typeof precinct === "string" && precinct.trim() !== "") {
+        conditions.push(`v.precinct = ?`);
+        params.push(precinct);
       }
 
       const whereClause =
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
-        // Updated query to include voter.img and voter.id.
         const csvQuery = `
-          SELECT v.fullname, v.cluster, v.type, v.img, v.id,
-                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
-          FROM voters v
-          LEFT JOIN voters vgl ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
-          ${whereClause}
-          ORDER BY v.fullname
-        `;
+        SELECT
+          v.fullname,
+          v.cluster,
+          v.precinct,
+          v.type,
+          v.img,
+          v.id,
+          CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+        FROM voters v
+        LEFT JOIN voters vgl
+          ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+        ${whereClause}
+        ORDER BY v.fullname
+      `;
 
-        // Execute the query
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
-        // Build CSV content with a header row including new columns.
-        const header = "Full Name,Cluster,Group Leader,Type,Has Picture,Link";
+        // Build CSV
+        const header =
+          "Full Name,Cluster,Precinct,Group Leader,Type,Has Picture,Link";
         const csvRows = [header];
         for (const row of rows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
-          // Map voter.type values to string: 0 => "B", 1 => "A", 2 => "C"
           const type =
             row.type === 0
               ? "B"
@@ -1033,15 +1081,13 @@ export async function voterRoutes(fastify: FastifyInstance) {
               ? "C"
               : "";
           const hasPicture = row.img ? "true" : "false";
-          // Build the link column using the FRONTEND_URL environment variable.
           const link = `${process.env.FRONTEND_URL}/voters/${row.id}`;
           csvRows.push(
-            `${fullname},${row.cluster},${vgl},${type},${hasPicture},${link}`
+            `${fullname},${row.cluster},${row.precinct},${vgl},${type},${hasPicture},${link}`
           );
         }
         const csvData = csvRows.join("\n");
 
-        // Set headers to trigger file download.
         reply.header("Content-Type", "text/csv");
         reply.header(
           "Content-Disposition",
