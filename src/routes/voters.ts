@@ -873,7 +873,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...voterIds);
 
       // 2. Ensure only event participants
-      conditions.push(`v.group_id != 0`);
+      // conditions.push(`v.group_id != 0`);
 
       // 3. participantType
       if (participantType === "leaders") {
@@ -883,7 +883,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // 4. Only types 0,1,2
-      conditions.push(`v.type IN (0, 1, 2)`);
+      // conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. img IS NULL
       if (imgIsNull) {
@@ -1007,7 +1007,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...voterIds);
 
       // 2. Only event participants
-      conditions.push(`v.group_id != 0`);
+      // conditions.push(`v.group_id != 0`);
 
       // 3. participantType
       if (participantType === "leaders") {
@@ -1017,7 +1017,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // 4. Only types 0,1,2
-      conditions.push(`v.type IN (0, 1, 2)`);
+      // conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. img IS NULL
       if (imgIsNull) {
