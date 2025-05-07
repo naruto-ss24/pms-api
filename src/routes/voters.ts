@@ -220,13 +220,20 @@ export async function voterRoutes(fastify: FastifyInstance) {
       const { barangayCode, participantType } = req.query;
 
       // Build the query for expected participants (those with group_id != 0).
+      // let expectedQuery = `
+      //   SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
+      //   FROM voters v
+      //   LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
+      //   WHERE v.brgy_code = ?
+      //     AND v.group_id != 0
+      //     AND v.type IN (0, 1, 2)
+      // `;
+
       let expectedQuery = `
         SELECT v.brgy_code, vb.name AS barangay, COUNT(*) AS expected
         FROM voters v
         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
         WHERE v.brgy_code = ? 
-          AND v.group_id != 0 
-          AND v.type IN (0, 1, 2)
       `;
 
       // Apply participantType filter logic if provided.
@@ -466,7 +473,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
-      conditions.push(`v.group_id != 0`);
+      // conditions.push(`v.group_id != 0`);
 
       // 3. Add condition based on participantType if provided
       if (participantType === "leaders") {
@@ -477,7 +484,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       // If participantType is not provided, no extra is_grpleader filter is applied.
 
       // 4. Only query voters with type 0 or 1
-      conditions.push(`v.type IN (0, 1, 2)`);
+      // conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional search filter on fullname
       if (search && search.trim() !== "") {
@@ -603,7 +610,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
-      conditions.push(`v.group_id != 0`);
+      // conditions.push(`v.group_id != 0`);
 
       // 3. Add condition based on participantType if provided
       if (participantType === "leaders") {
@@ -614,7 +621,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       // If participantType is not provided, no extra is_grpleader filter is applied.
 
       // 4. Only query voters with type 0 or 1
-      conditions.push(`v.type IN (0, 1, 2)`);
+      // conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional search filter on fullname
       if (search && search.trim() !== "") {
@@ -745,7 +752,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...hashIds);
 
       // 2. Only consider expected participants.
-      conditions.push(`v.group_id != 0`);
+      // conditions.push(`v.group_id != 0`);
 
       // 3. Participant type filtering if provided.
       if (participantType === "leaders") {
@@ -755,7 +762,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       }
 
       // 4. Only query voters with type 0 or 1.
-      conditions.push(`v.type IN (0, 1, 2)`);
+      // conditions.push(`v.type IN (0, 1, 2)`);
 
       // 5. Optional search filter on fullname.
       if (search && search.trim() !== "") {
@@ -913,21 +920,47 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
+        // const csvQuery = `
+        //   SELECT
+        //     v.fullname,
+        //     v.cluster,
+        //     v.precinct,
+        //     v.type,
+        //     v.img,
+        //     v.id,
+        //     CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+        //   FROM voters v
+        //   LEFT JOIN voters vgl
+        //     ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+        //   ${whereClause}
+        //   ORDER BY v.fullname
+        // `;
+
         const csvQuery = `
-        SELECT
-          v.fullname,
-          v.cluster,
-          v.precinct,
-          v.type,
-          v.img,
-          v.id,
-          CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
-        FROM voters v
-        LEFT JOIN voters vgl
-          ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
-        ${whereClause}
-        ORDER BY v.fullname
-      `;
+          SELECT
+            v.fullname,
+            v.cluster,
+            v.precinct,
+            v.type,
+            v.img,
+            v.id,
+            CASE
+              WHEN v.group_id = 0 THEN 'N/A'
+              ELSE COALESCE(
+                (
+                  SELECT fullname
+                  FROM voters v2
+                  WHERE v2.group_id = v.group_id
+                    AND v2.is_grpleader = 1
+                  LIMIT 1
+                ),
+                'N/A'
+              )
+            END AS vgl
+          FROM voters v
+          ${whereClause}
+          ORDER BY v.fullname
+        `;
 
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
 
@@ -1047,6 +1080,22 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
+        // const csvQuery = `
+        //   SELECT
+        //     v.fullname,
+        //     v.cluster,
+        //     v.precinct,
+        //     v.type,
+        //     v.img,
+        //     v.id,
+        //     CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+        //   FROM voters v
+        //   LEFT JOIN voters vgl
+        //     ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+        //   ${whereClause}
+        //   ORDER BY v.fullname
+        // `;
+
         const csvQuery = `
         SELECT
           v.fullname,
@@ -1055,10 +1104,20 @@ export async function voterRoutes(fastify: FastifyInstance) {
           v.type,
           v.img,
           v.id,
-          CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+          CASE
+            WHEN v.group_id = 0 THEN 'N/A'
+            ELSE COALESCE(
+              (
+                SELECT fullname
+                FROM voters v2
+                WHERE v2.group_id = v.group_id
+                  AND v2.is_grpleader = 1
+                LIMIT 1
+              ),
+              'N/A'
+            )
+          END AS vgl
         FROM voters v
-        LEFT JOIN voters vgl
-          ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
         ${whereClause}
         ORDER BY v.fullname
       `;
