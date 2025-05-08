@@ -234,6 +234,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
         FROM voters v
         LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
         WHERE v.brgy_code = ? 
+          AND v.group_id != 0
       `;
 
       // Apply participantType filter logic if provided.
@@ -473,7 +474,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
-      // conditions.push(`v.group_id != 0`);
+      conditions.push(`v.group_id != 0`);
 
       // 3. Add condition based on participantType if provided
       if (participantType === "leaders") {
@@ -524,10 +525,10 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
           SELECT v.id, v.hash_id, v.img, v.type,
-                v.fullname, v.group_id, v.family_id, v.is_grpleader, v.is_houseleader, v.cluster, v.precinct,
-                vb.code AS barangayCode, vb.name AS barangay, 
-                vc.name AS citymun, vd.name AS district,
-                CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+            v.fullname, v.group_id, v.family_id, v.is_grpleader, v.is_houseleader, v.cluster, v.precinct,
+            vb.code AS barangayCode, vb.name AS barangay, 
+            vc.name AS citymun, vd.name AS district,
+            CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
           LEFT JOIN voter_city vc ON v.city_code = vc.code
@@ -610,7 +611,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...hashIds);
 
       // 2. Ensure only event participants (group_id != 0)
-      // conditions.push(`v.group_id != 0`);
+      conditions.push(`v.group_id != 0`);
 
       // 3. Add condition based on participantType if provided
       if (participantType === "leaders") {
@@ -661,9 +662,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Added computed column "vgl" using a LEFT JOIN.
         const dataQuery = `
           SELECT v.id, v.hash_id, v.img, v.fullname, v.type,
-                 vb.code AS barangayCode, vb.name AS barangay, 
-                 vc.name AS citymun, vd.name AS district,
-                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+            vb.code AS barangayCode, vb.name AS barangay, 
+            vc.name AS citymun, vd.name AS district,
+            CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
           LEFT JOIN voter_city vc ON v.city_code = vc.code
@@ -752,7 +753,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...hashIds);
 
       // 2. Only consider expected participants.
-      // conditions.push(`v.group_id != 0`);
+      conditions.push(`v.group_id != 0`);
 
       // 3. Participant type filtering if provided.
       if (participantType === "leaders") {
@@ -800,9 +801,9 @@ export async function voterRoutes(fastify: FastifyInstance) {
         // Added computed "vgl" field.
         const dataQuery = `
           SELECT v.id, v.hash_id, v.img, v.fullname, v.type,
-                 vb.code AS barangayCode, vb.name AS barangay, 
-                 vc.name AS citymun, vd.name AS district,
-                 CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+            vb.code AS barangayCode, vb.name AS barangay,
+            vc.name AS citymun, vd.name AS district,
+            CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
           LEFT JOIN voter_barangay vb ON v.brgy_code = vb.code
           LEFT JOIN voter_city vc ON v.city_code = vc.code
@@ -860,8 +861,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
         barangayCodes,
         participantType,
         imgIsNull,
-        cluster, // ← destructured
-        precinct, // ← destructured
+        cluster,
+        precinct,
       } = req.body;
 
       if (!Array.isArray(voterIds) || voterIds.length === 0) {
@@ -920,22 +921,6 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
-        // const csvQuery = `
-        //   SELECT
-        //     v.fullname,
-        //     v.cluster,
-        //     v.precinct,
-        //     v.type,
-        //     v.img,
-        //     v.id,
-        //     CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
-        //   FROM voters v
-        //   LEFT JOIN voters vgl
-        //     ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
-        //   ${whereClause}
-        //   ORDER BY v.fullname
-        // `;
-
         const csvQuery = `
           SELECT
             v.fullname,
@@ -944,31 +929,53 @@ export async function voterRoutes(fastify: FastifyInstance) {
             v.type,
             v.img,
             v.id,
-            CASE
-              WHEN v.group_id = 0 THEN 'N/A'
-              ELSE COALESCE(
-                (
-                  SELECT fullname
-                  FROM voters v2
-                  WHERE v2.group_id = v.group_id
-                    AND v2.is_grpleader = 1
-                  LIMIT 1
-                ),
-                'N/A'
-              )
-            END AS vgl
+            CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
           FROM voters v
+          LEFT JOIN voters vgl
+            ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
           ${whereClause}
           ORDER BY v.fullname
         `;
 
+        // const csvQuery = `
+        //   SELECT
+        //     v.fullname,
+        //     v.cluster,
+        //     v.precinct,
+        //     v.type,
+        //     v.img,
+        //     v.id,
+        //     CASE
+        //       WHEN v.group_id = 0 THEN 'N/A'
+        //       ELSE COALESCE(
+        //         (
+        //           SELECT fullname
+        //           FROM voters v2
+        //           WHERE v2.group_id = v.group_id
+        //             AND v2.is_grpleader = 1
+        //           LIMIT 1
+        //         ),
+        //         'N/A'
+        //       )
+        //     END AS vgl
+        //   FROM voters v
+        //   ${whereClause}
+        //   ORDER BY v.fullname
+        // `;
+
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
+
+        // remove duplicates by voter id, keep the first occurrence
+        const uniqueRows = [
+          ...new Map(rows.map((row) => [row.id, row])).values(),
+        ];
 
         // Build CSV
         const header =
           "Full Name,Cluster,Precinct,Group Leader,Type,Has Picture,Link";
         const csvRows = [header];
-        for (const row of rows) {
+
+        for (const row of uniqueRows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
           const type =
@@ -985,8 +992,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
             `${fullname},${row.cluster},${row.precinct},${vgl},${type},${hasPicture},${link}`
           );
         }
-        const csvData = csvRows.join("\n");
 
+        const csvData = csvRows.join("\n");
         reply.header("Content-Type", "text/csv");
         reply.header(
           "Content-Disposition",
@@ -1021,8 +1028,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
         barangayCodes,
         participantType,
         imgIsNull,
-        cluster, // ← destructured
-        precinct, // ← destructured
+        cluster,
+        precinct,
       } = req.body;
 
       if (!Array.isArray(voterIds) || voterIds.length === 0) {
@@ -1040,7 +1047,7 @@ export async function voterRoutes(fastify: FastifyInstance) {
       params.push(...voterIds);
 
       // 2. Only event participants
-      // conditions.push(`v.group_id != 0`);
+      conditions.push(`v.group_id != 0`);
 
       // 3. participantType
       if (participantType === "leaders") {
@@ -1080,6 +1087,22 @@ export async function voterRoutes(fastify: FastifyInstance) {
         conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
       try {
+        const csvQuery = `
+          SELECT
+            v.fullname,
+            v.cluster,
+            v.precinct,
+            v.type,
+            v.img,
+            v.id,
+            CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+          FROM voters v
+          LEFT JOIN voters vgl
+            ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
+          ${whereClause}
+          ORDER BY v.fullname
+        `;
+
         // const csvQuery = `
         //   SELECT
         //     v.fullname,
@@ -1088,47 +1111,37 @@ export async function voterRoutes(fastify: FastifyInstance) {
         //     v.type,
         //     v.img,
         //     v.id,
-        //     CASE WHEN v.group_id = 0 THEN 'N/A' ELSE vgl.fullname END AS vgl
+        //     CASE
+        //       WHEN v.group_id = 0 THEN 'N/A'
+        //       ELSE COALESCE(
+        //         (
+        //           SELECT fullname
+        //           FROM voters v2
+        //           WHERE v2.group_id = v.group_id
+        //             AND v2.is_grpleader = 1
+        //           LIMIT 1
+        //         ),
+        //         'N/A'
+        //       )
+        //     END AS vgl
         //   FROM voters v
-        //   LEFT JOIN voters vgl
-        //     ON v.group_id = vgl.group_id AND vgl.is_grpleader = 1
         //   ${whereClause}
         //   ORDER BY v.fullname
         // `;
 
-        const csvQuery = `
-        SELECT
-          v.fullname,
-          v.cluster,
-          v.precinct,
-          v.type,
-          v.img,
-          v.id,
-          CASE
-            WHEN v.group_id = 0 THEN 'N/A'
-            ELSE COALESCE(
-              (
-                SELECT fullname
-                FROM voters v2
-                WHERE v2.group_id = v.group_id
-                  AND v2.is_grpleader = 1
-                LIMIT 1
-              ),
-              'N/A'
-            )
-          END AS vgl
-        FROM voters v
-        ${whereClause}
-        ORDER BY v.fullname
-      `;
-
         const [rows] = await fastify.mysql.query<any[]>(csvQuery, params);
+
+        // remove duplicate voter‐rows by id, keeping the first occurrence
+        const uniqueRows = [
+          ...new Map(rows.map((row) => [row.id, row])).values(),
+        ];
 
         // Build CSV
         const header =
           "Full Name,Cluster,Precinct,Group Leader,Type,Has Picture,Link";
         const csvRows = [header];
-        for (const row of rows) {
+
+        for (const row of uniqueRows) {
           const fullname = escapeCSV(String(row.fullname));
           const vgl = escapeCSV(String(row.vgl));
           const type =
@@ -1145,8 +1158,8 @@ export async function voterRoutes(fastify: FastifyInstance) {
             `${fullname},${row.cluster},${row.precinct},${vgl},${type},${hasPicture},${link}`
           );
         }
-        const csvData = csvRows.join("\n");
 
+        const csvData = csvRows.join("\n");
         reply.header("Content-Type", "text/csv");
         reply.header(
           "Content-Disposition",
